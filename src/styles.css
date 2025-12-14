@@ -256,8 +256,8 @@ html, body {
 .landing-page {
   height: 100%;
   width: 100%;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  color: #e4e4e7;
+  background-color: #1e1e1e;
+  color: #cccccc;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow-y: auto;
 }
@@ -266,139 +266,220 @@ html, body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  max-width: 1200px;
+  max-width: 480px;
   margin: 0 auto;
   padding: 0 24px;
 }
 
 .landing-header {
   padding: 24px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .landing-logo {
-  font-size: 14px;
+  font-size: 11px;
   font-variant: small-caps;
-  letter-spacing: 0.2em;
-  color: #71717a;
-  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: #5a5a5a;
 }
 
 .landing-hero {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  text-align: center;
   padding: 48px 0;
 }
 
 .landing-hero h1 {
-  font-size: 3.5rem;
-  font-weight: 700;
-  margin-bottom: 16px;
-  background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: 1.5rem;
+  font-weight: 400;
+  margin-bottom: 8px;
+  color: #ffffff;
 }
 
 .landing-subtitle {
-  font-size: 1.25rem;
-  color: #a1a1aa;
-  max-width: 600px;
-  line-height: 1.6;
-  margin-bottom: 48px;
-}
-
-.landing-features {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 24px;
-  width: 100%;
-  max-width: 900px;
-  margin-bottom: 48px;
-}
-
-.feature {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  padding: 24px;
-  text-align: left;
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.feature:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.feature-icon {
-  font-size: 2rem;
-  margin-bottom: 12px;
-}
-
-.feature h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #fff;
-}
-
-.feature p {
   font-size: 0.875rem;
-  color: #71717a;
+  color: #808080;
   line-height: 1.5;
+  margin-bottom: 32px;
 }
 
 .landing-cta {
-  background: linear-gradient(135deg, #007acc 0%, #005fa3 100%);
-  color: #fff;
+  background-color: #0e639c;
+  color: #ffffff;
   border: none;
-  padding: 16px 48px;
-  font-size: 1.125rem;
-  font-weight: 600;
-  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 400;
+  border-radius: 0;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 14px rgba(0, 122, 204, 0.4);
+  align-self: flex-start;
 }
 
 .landing-cta:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 122, 204, 0.5);
+  background-color: #1177bb;
 }
 
 .landing-cta:disabled {
-  opacity: 0.7;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .landing-hint {
-  margin-top: 16px;
-  font-size: 0.875rem;
-  color: #52525b;
+  margin-top: 12px;
+  font-size: 11px;
+  color: #5a5a5a;
 }
 
 .landing-hint kbd {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  padding: 2px 6px;
+  background-color: #3c3c3c;
+  border: 1px solid #505050;
+  border-radius: 3px;
+  padding: 1px 5px;
   font-family: inherit;
-  font-size: 0.75rem;
+  font-size: 10px;
+  color: #cccccc;
+}
+
+.landing-features {
+  margin-top: 48px;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-features li {
+  font-size: 13px;
+  color: #808080;
+  padding: 6px 0;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.landing-features li:last-child {
+  border-bottom: none;
 }
 
 .landing-footer {
   padding: 24px 0;
-  text-align: center;
-  color: #3f3f46;
+  border-top: 1px solid #2d2d2d;
+}
+
+.landing-footer-links {
+  margin-bottom: 12px;
+}
+
+.landing-footer-links a {
+  font-size: 11px;
+  color: #808080;
+  text-decoration: none;
+  margin-right: 16px;
+}
+
+.landing-footer-links a:hover {
+  color: #cccccc;
+}
+
+.landing-footer-text {
+  font-size: 11px;
+  color: #5a5a5a;
+  line-height: 1.5;
+}
+
+/* Legal Page Styles */
+.legal-page {
+  height: 100%;
+  width: 100%;
+  background-color: #1e1e1e;
+  color: #cccccc;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-y: auto;
+}
+
+.legal-container {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.legal-header {
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.legal-back {
+  font-size: 11px;
+  color: #808080;
+  text-decoration: none;
+}
+
+.legal-back:hover {
+  color: #cccccc;
+}
+
+.legal-logo {
+  font-size: 11px;
+  font-variant: small-caps;
+  letter-spacing: 0.15em;
+  color: #5a5a5a;
+}
+
+.legal-content {
+  flex: 1;
+  padding: 24px 0 48px;
+}
+
+.legal-content h1 {
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.legal-content h2 {
   font-size: 0.875rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+  color: #cccccc;
+  margin-top: 32px;
+  margin-bottom: 12px;
+}
+
+.legal-content p {
+  font-size: 13px;
+  color: #808080;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.legal-content ul {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+}
+
+.legal-content li {
+  font-size: 13px;
+  color: #808080;
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+
+.legal-updated {
+  font-size: 11px;
+  color: #5a5a5a;
+}
+
+.legal-footer {
+  padding: 24px 0;
+  border-top: 1px solid #2d2d2d;
+}
+
+.legal-footer p {
+  font-size: 11px;
+  color: #5a5a5a;
+  margin: 0;
 }
 
 /* Connection Status Indicator */

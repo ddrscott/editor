@@ -1,5 +1,6 @@
 import { Router } from './router/Router';
 import { LandingPage } from './pages/LandingPage';
+import { LegalPage } from './pages/LegalPage';
 import { EditorApp } from './app/EditorApp';
 
 // Set initial page title
@@ -18,8 +19,28 @@ router.route('/', () => {
     currentPage.destroy();
   }
   appContainer.innerHTML = '';
-  document.title = 'Monaco - Code Together, Instantly';
+  document.title = 'Monaco';
   currentPage = new LandingPage(appContainer, router);
+});
+
+// Route: Terms page
+router.route('/terms', () => {
+  if (currentPage) {
+    currentPage.destroy();
+  }
+  appContainer.innerHTML = '';
+  document.title = 'Terms of Service | Monaco';
+  currentPage = new LegalPage(appContainer, router, 'terms');
+});
+
+// Route: Privacy page
+router.route('/privacy', () => {
+  if (currentPage) {
+    currentPage.destroy();
+  }
+  appContainer.innerHTML = '';
+  document.title = 'Privacy Policy | Monaco';
+  currentPage = new LegalPage(appContainer, router, 'privacy');
 });
 
 // Route: Space page (editor)

@@ -16,50 +16,39 @@ export class LandingPage {
     this.element.innerHTML = `
       <div class="landing-container">
         <header class="landing-header">
-          <span class="landing-logo">MONACO</span>
+          <span class="landing-logo">monaco</span>
         </header>
 
         <main class="landing-hero">
-          <h1>Code Together, Instantly</h1>
+          <h1>Collaborative code editor</h1>
           <p class="landing-subtitle">
-            Create shareable code snippets with the power of VS Code's editor.
-            Real-time collaboration, syntax highlighting, and instant sharing.
+            Share a link. Edit together. No signup required.
           </p>
 
-          <div class="landing-features">
-            <div class="feature">
-              <div class="feature-icon">&#x1F4DD;</div>
-              <h3>Monaco Editor</h3>
-              <p>Full VS Code editing experience with syntax highlighting for 50+ languages</p>
-            </div>
-            <div class="feature">
-              <div class="feature-icon">&#x1F465;</div>
-              <h3>Real-time Collaboration</h3>
-              <p>Multiple users can edit simultaneously with live cursor tracking</p>
-            </div>
-            <div class="feature">
-              <div class="feature-icon">&#x1F517;</div>
-              <h3>Instant Sharing</h3>
-              <p>Share your space URL - no signup required, works immediately</p>
-            </div>
-            <div class="feature">
-              <div class="feature-icon">&#x1F440;</div>
-              <h3>Live Preview</h3>
-              <p>Render Markdown and HTML/JS with in-browser preview modes</p>
-            </div>
-          </div>
-
           <button class="landing-cta" id="create-space-btn">
-            Create New Space
+            New Space
           </button>
 
           <p class="landing-hint">
-            Press the button or use <kbd>Cmd</kbd> + <kbd>Enter</kbd>
+            <kbd>Cmd</kbd> + <kbd>Enter</kbd>
           </p>
+
+          <ul class="landing-features">
+            <li>Monaco editor with 50+ language support</li>
+            <li>Real-time collaboration with cursor tracking</li>
+            <li>Markdown and HTML preview</li>
+            <li>Split panes and multiple tabs</li>
+          </ul>
         </main>
 
         <footer class="landing-footer">
-          <p>Built with Monaco Editor &middot; Powered by Cloudflare</p>
+          <div class="landing-footer-links">
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+          </div>
+          <p class="landing-footer-text">
+            Made by Scott Pierce. Sponsored by Left Join Studio, Inc.
+          </p>
         </footer>
       </div>
     `;
