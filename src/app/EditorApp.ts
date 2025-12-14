@@ -1,0 +1,2205 @@
+import * as monaco from 'monaco-editor';
+import { SyncClient } from '../sync/SyncClient';
+
+interface TabData {
+  id: string;
+  title: string;
+  content: string;
+  viewState: monaco.editor.ICodeEditorViewState | null;
+  hidden?: boolean;
+}
+
+interface PaneData {
+  id: string;
+  tabs: TabData[];
+  activeTabId: string | null;
+}
+
+interface SplitData {
+  type: 'pane' | 'split';
+  direction?: 'horizontal' | 'vertical';
+  children?: SplitData[];
+  paneId?: string;
+  sizes?: number[];
+}
+
+interface StoredState {
+  layout: SplitData;
+  panes: PaneData[];
+  tabCounter: number;
+}
+
+interface EditorSettingsData {
+  minimap: boolean;
+  wordWrap: 'on' | 'off' | 'wordWrapColumn' | 'bounded';
+  fontSize: number;
+  theme: string;
+  lineNumbers: 'on' | 'off' | 'relative';
+  renderWhitespace: 'none' | 'boundary' | 'selection' | 'trailing' | 'all';
+  tabSize: number;
+}
+
+const DEFAULT_SETTINGS: EditorSettingsData = {
+  minimap: false,
+  wordWrap: 'on',
+  fontSize: 14,
+  theme: 'vs-dark',
+  lineNumbers: 'on',
+  renderWhitespace: 'none',
+  tabSize: 2,
+};
+
+class EditorSettings {
+  private static readonly STORAGE_KEY = 'monaco-editor-settings';
+  private settings: EditorSettingsData;
+  private listeners: Set<(settings: EditorSettingsData) => void> = new Set();
+
+  constructor() {
+    this.settings = this.load();
+  }
+
+  private load(): EditorSettingsData {
+    try {
+      const stored = localStorage.getItem(EditorSettings.STORAGE_KEY);
+      if (stored) {
+        return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+    return { ...DEFAULT_SETTINGS };
+  }
+
+  private save(): void {
+    try {
+      localStorage.setItem(EditorSettings.STORAGE_KEY, JSON.stringify(this.settings));
+    } catch (e) {
+      console.error('Failed to save settings:', e);
+    }
+  }
+
+  get<K extends keyof EditorSettingsData>(key: K): EditorSettingsData[K] {
+    return this.settings[key];
+  }
+
+  set<K extends keyof EditorSettingsData>(key: K, value: EditorSettingsData[K]): void {
+    this.settings[key] = value;
+    this.save();
+    this.notifyListeners();
+  }
+
+  toggle(key: 'minimap'): boolean;
+  toggle(key: 'lineNumbers'): 'on' | 'off' | 'relative';
+  toggle(key: 'wordWrap'): 'on' | 'off';
+  toggle(key: 'minimap' | 'lineNumbers' | 'wordWrap'): boolean | string {
+    if (key === 'minimap') {
+      this.settings.minimap = !this.settings.minimap;
+      this.save();
+      this.notifyListeners();
+      return this.settings.minimap;
+    } else if (key === 'lineNumbers') {
+      const cycle: Array<'on' | 'off' | 'relative'> = ['on', 'off', 'relative'];
+      const currentIndex = cycle.indexOf(this.settings.lineNumbers);
+      this.settings.lineNumbers = cycle[(currentIndex + 1) % cycle.length];
+      this.save();
+      this.notifyListeners();
+      return this.settings.lineNumbers;
+    } else if (key === 'wordWrap') {
+      this.settings.wordWrap = this.settings.wordWrap === 'on' ? 'off' : 'on';
+      this.save();
+      this.notifyListeners();
+      return this.settings.wordWrap;
+    }
+    return false;
+  }
+
+  getAll(): EditorSettingsData {
+    return { ...this.settings };
+  }
+
+  getMonacoOptions(): monaco.editor.IEditorOptions {
+    return {
+      minimap: { enabled: this.settings.minimap },
+      wordWrap: this.settings.wordWrap,
+      fontSize: this.settings.fontSize,
+      lineNumbers: this.settings.lineNumbers,
+      renderWhitespace: this.settings.renderWhitespace,
+      tabSize: this.settings.tabSize,
+    };
+  }
+
+  onChange(listener: (settings: EditorSettingsData) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notifyListeners(): void {
+    this.listeners.forEach(listener => listener(this.settings));
+  }
+}
+
+// Register custom actions with Monaco's built-in command system
+function registerEditorActions(settings: EditorSettings): void {
+  // Toggle Minimap
+  monaco.editor.addEditorAction({
+    id: 'editor.action.toggleMinimap',
+    label: 'View: Toggle Minimap',
+    keybindings: [],
+    run: () => {
+      settings.toggle('minimap');
+    }
+  });
+
+  // Toggle Word Wrap
+  monaco.editor.addEditorAction({
+    id: 'editor.action.toggleWordWrap',
+    label: 'View: Toggle Word Wrap',
+    keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyZ],
+    run: () => {
+      settings.toggle('wordWrap');
+    }
+  });
+
+  // Toggle Line Numbers
+  monaco.editor.addEditorAction({
+    id: 'editor.action.toggleLineNumbers',
+    label: 'View: Toggle Line Numbers',
+    keybindings: [],
+    run: () => {
+      settings.toggle('lineNumbers');
+    }
+  });
+
+  // Increase Font Size
+  monaco.editor.addEditorAction({
+    id: 'editor.action.increaseFontSize',
+    label: 'View: Increase Font Size',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Equal],
+    run: () => {
+      settings.set('fontSize', settings.get('fontSize') + 1);
+    }
+  });
+
+  // Decrease Font Size
+  monaco.editor.addEditorAction({
+    id: 'editor.action.decreaseFontSize',
+    label: 'View: Decrease Font Size',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Minus],
+    run: () => {
+      settings.set('fontSize', Math.max(8, settings.get('fontSize') - 1));
+    }
+  });
+
+  // Reset Font Size
+  monaco.editor.addEditorAction({
+    id: 'editor.action.resetFontSize',
+    label: 'View: Reset Font Size',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit0],
+    run: () => {
+      settings.set('fontSize', 14);
+    }
+  });
+
+  // Theme: Light
+  monaco.editor.addEditorAction({
+    id: 'editor.action.setThemeLight',
+    label: 'Preferences: Color Theme - Light',
+    keybindings: [],
+    run: () => {
+      settings.set('theme', 'vs');
+    }
+  });
+
+  // Theme: Dark
+  monaco.editor.addEditorAction({
+    id: 'editor.action.setThemeDark',
+    label: 'Preferences: Color Theme - Dark',
+    keybindings: [],
+    run: () => {
+      settings.set('theme', 'vs-dark');
+    }
+  });
+
+  // Theme: High Contrast
+  monaco.editor.addEditorAction({
+    id: 'editor.action.setThemeHighContrast',
+    label: 'Preferences: Color Theme - High Contrast',
+    keybindings: [],
+    run: () => {
+      settings.set('theme', 'hc-black');
+    }
+  });
+
+  // Toggle Whitespace
+  monaco.editor.addEditorAction({
+    id: 'editor.action.toggleRenderWhitespace',
+    label: 'View: Toggle Render Whitespace',
+    keybindings: [],
+    run: () => {
+      const current = settings.get('renderWhitespace');
+      const cycle: Array<'none' | 'boundary' | 'all'> = ['none', 'boundary', 'all'];
+      const idx = cycle.indexOf(current as 'none' | 'boundary' | 'all');
+      settings.set('renderWhitespace', cycle[(idx + 1) % cycle.length]);
+    }
+  });
+
+  // Tab Size options
+  [2, 4, 8].forEach(size => {
+    monaco.editor.addEditorAction({
+      id: `editor.action.setTabSize${size}`,
+      label: `Preferences: Set Tab Size to ${size}`,
+      keybindings: [],
+      run: () => {
+        settings.set('tabSize', size);
+      }
+    });
+  });
+}
+
+class EditorStorage {
+  private db: IDBDatabase | null = null;
+  private readonly DB_NAME: string;
+  private readonly STORE_NAME = 'editor-state';
+  private readonly STATE_KEY = 'state';
+
+  constructor(spaceId?: string) {
+    // Use space-specific database if spaceId provided
+    this.DB_NAME = spaceId ? `monaco-space-${spaceId}` : 'monaco-editor-db';
+  }
+
+  async init(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.DB_NAME, 2);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+          db.createObjectStore(this.STORE_NAME);
+        }
+      };
+    });
+  }
+
+  async save(state: StoredState): Promise<void> {
+    if (!this.db) return;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(this.STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(this.STORE_NAME);
+      const request = store.put(state, this.STATE_KEY);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  async load(): Promise<StoredState | null> {
+    if (!this.db) return null;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(this.STORE_NAME, 'readonly');
+      const store = transaction.objectStore(this.STORE_NAME);
+      const request = store.get(this.STATE_KEY);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result || null);
+    });
+  }
+}
+
+interface Tab {
+  id: string;
+  title: string;
+  model: monaco.editor.ITextModel;
+  viewState: monaco.editor.ICodeEditorViewState | null;
+  hidden?: boolean;
+}
+
+type SplitDirection = 'left' | 'right' | 'top' | 'bottom';
+
+interface RemoteCursor {
+  clientId: string;
+  color: string;
+  position: { lineNumber: number; column: number };
+  selection?: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+  decorationIds: string[];
+}
+
+class Pane {
+  readonly id: string;
+  readonly element: HTMLElement;
+  private editor: monaco.editor.IStandaloneCodeEditor;
+  private tabs: Tab[] = [];
+  private activeTabId: string | null = null;
+  private tabsContainer: HTMLElement;
+  private editorContainer: HTMLElement;
+  private dropZones: HTMLElement;
+  private app: EditorApp;
+  private draggedTabId: string | null = null;
+  private remoteCursors: Map<string, RemoteCursor> = new Map();
+  private cursorWidgets: Map<string, HTMLElement> = new Map();
+  private scrollDisposable: monaco.IDisposable | null = null;
+
+  constructor(app: EditorApp, id?: string) {
+    this.app = app;
+    this.id = id || `pane-${Date.now()}`;
+
+    this.element = document.createElement('div');
+    this.element.className = 'pane';
+    this.element.dataset.paneId = this.id;
+
+    this.tabsContainer = document.createElement('div');
+    this.tabsContainer.className = 'tabs';
+
+    const addButton = document.createElement('div');
+    addButton.className = 'tab-add';
+    addButton.innerHTML = '+';
+    addButton.title = 'New Tab (Ctrl+N), Right-click to restore';
+    addButton.addEventListener('click', () => this.app.createNewTab(this));
+    addButton.addEventListener('contextmenu', (e) => this.showRestoreMenu(e));
+    this.tabsContainer.appendChild(addButton);
+
+    this.editorContainer = document.createElement('div');
+    this.editorContainer.className = 'editor-container';
+
+    this.dropZones = document.createElement('div');
+    this.dropZones.className = 'drop-zones';
+    this.dropZones.innerHTML = `
+      <div class="drop-zone drop-zone-left" data-direction="left"></div>
+      <div class="drop-zone drop-zone-right" data-direction="right"></div>
+      <div class="drop-zone drop-zone-top" data-direction="top"></div>
+      <div class="drop-zone drop-zone-bottom" data-direction="bottom"></div>
+      <div class="drop-zone drop-zone-center" data-direction="center"></div>
+    `;
+
+    this.element.appendChild(this.tabsContainer);
+    this.element.appendChild(this.editorContainer);
+    this.element.appendChild(this.dropZones);
+
+    const settings = this.app.getSettings();
+    this.editor = monaco.editor.create(this.editorContainer, {
+      theme: settings.get('theme'),
+      automaticLayout: true,
+      scrollBeyondLastLine: false,
+      ...settings.getMonacoOptions(),
+    });
+
+    this.setupKeyboardShortcuts();
+    this.setupDropZones();
+    this.setupCursorTracking();
+
+    settings.onChange(() => this.applySettings());
+  }
+
+  private setupCursorTracking(): void {
+    // Track cursor position changes
+    this.editor.onDidChangeCursorPosition((e) => {
+      const tabId = this.activeTabId;
+      if (tabId) {
+        this.app.sendCursorUpdate(tabId, {
+          line: e.position.lineNumber,
+          column: e.position.column,
+        });
+      }
+    });
+
+    // Track selection changes
+    this.editor.onDidChangeCursorSelection((e) => {
+      const tabId = this.activeTabId;
+      const sel = e.selection;
+      if (tabId && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn)) {
+        this.app.sendSelectionUpdate(tabId, {
+          startLine: sel.startLineNumber,
+          startColumn: sel.startColumn,
+          endLine: sel.endLineNumber,
+          endColumn: sel.endColumn,
+        });
+      }
+    });
+  }
+
+  updateRemoteCursor(clientId: string, color: string, cursor?: { line: number; column: number }, selection?: { startLine: number; startColumn: number; endLine: number; endColumn: number }): void {
+    const model = this.editor.getModel();
+    if (!model) return;
+
+    // Get or create remote cursor
+    let remoteCursor = this.remoteCursors.get(clientId);
+    if (!remoteCursor) {
+      remoteCursor = {
+        clientId,
+        color,
+        position: { lineNumber: 1, column: 1 },
+        decorationIds: [],
+      };
+      this.remoteCursors.set(clientId, remoteCursor);
+    }
+
+    // Update position
+    if (cursor) {
+      remoteCursor.position = { lineNumber: cursor.line, column: cursor.column };
+    }
+
+    // Update selection
+    if (selection) {
+      remoteCursor.selection = {
+        startLineNumber: selection.startLine,
+        startColumn: selection.startColumn,
+        endLineNumber: selection.endLine,
+        endColumn: selection.endColumn,
+      };
+    } else {
+      // Clear selection if not provided
+      remoteCursor.selection = undefined;
+    }
+
+    // Create decorations - only for selection highlighting, not cursor
+    const decorations: monaco.editor.IModelDeltaDecoration[] = [];
+
+    // Selection decoration only (cursor is rendered via DOM widget)
+    if (remoteCursor.selection) {
+      decorations.push({
+        range: new monaco.Range(
+          remoteCursor.selection.startLineNumber,
+          remoteCursor.selection.startColumn,
+          remoteCursor.selection.endLineNumber,
+          remoteCursor.selection.endColumn
+        ),
+        options: {
+          className: `remote-selection`,
+          inlineClassName: `remote-selection-inline`,
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      });
+    }
+
+    // Apply decorations
+    remoteCursor.decorationIds = this.editor.deltaDecorations(
+      remoteCursor.decorationIds,
+      decorations
+    );
+
+    // Update or create cursor widget (the colored line)
+    this.updateCursorWidget(clientId, color, remoteCursor.position);
+  }
+
+  private updateCursorWidget(clientId: string, color: string, position: { lineNumber: number; column: number }): void {
+    // Get line height from editor options
+    const lineHeight = this.editor.getOption(monaco.editor.EditorOption.lineHeight);
+
+    // Get or create widget
+    let widget = this.cursorWidgets.get(clientId);
+
+    if (!widget) {
+      // Create cursor widget
+      widget = document.createElement('div');
+      widget.className = 'remote-cursor-widget';
+      widget.dataset.clientId = clientId;
+      widget.style.cssText = `
+        position: absolute;
+        width: 2px;
+        background-color: ${color};
+        pointer-events: none;
+        z-index: 100;
+      `;
+      widget.style.height = `${lineHeight}px`;
+
+      // Add label (positioned above the cursor)
+      const label = document.createElement('div');
+      label.className = 'remote-cursor-label';
+      label.textContent = `User`;
+      label.style.cssText = `
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        background-color: ${color};
+        color: white;
+        font-size: 10px;
+        padding: 1px 4px;
+        border-radius: 2px;
+        white-space: nowrap;
+        font-family: sans-serif;
+      `;
+      widget.appendChild(label);
+
+      this.cursorWidgets.set(clientId, widget);
+      this.editorContainer.appendChild(widget);
+
+      // Set up scroll listener once if not already done
+      if (!this.scrollDisposable) {
+        this.scrollDisposable = this.editor.onDidScrollChange(() => {
+          this.updateAllCursorWidgetPositions();
+        });
+      }
+    }
+
+    // Update color in case it changed
+    widget.style.backgroundColor = color;
+    widget.style.height = `${lineHeight}px`;
+    const label = widget.querySelector('.remote-cursor-label') as HTMLElement;
+    if (label) {
+      label.style.backgroundColor = color;
+    }
+
+    // Store position on the cursor data
+    const cursor = this.remoteCursors.get(clientId);
+    if (cursor) {
+      cursor.position = position;
+    }
+
+    // Position the widget using Monaco's coordinate system
+    const coords = this.editor.getScrolledVisiblePosition(position);
+    if (coords) {
+      // coords.top is relative to the editor's content area
+      // Add 2 line heights to fix vertical offset
+      const topOffset = lineHeight * 2;
+      widget.style.left = `${coords.left}px`;
+      widget.style.top = `${coords.top + topOffset}px`;
+      widget.style.display = 'block';
+    } else {
+      widget.style.display = 'none';
+    }
+  }
+
+  private updateAllCursorWidgetPositions(): void {
+    const lineHeight = this.editor.getOption(monaco.editor.EditorOption.lineHeight);
+    const topOffset = lineHeight * 2;
+
+    this.remoteCursors.forEach((cursor, clientId) => {
+      const widget = this.cursorWidgets.get(clientId);
+      if (widget) {
+        const coords = this.editor.getScrolledVisiblePosition(cursor.position);
+        if (coords) {
+          widget.style.left = `${coords.left}px`;
+          widget.style.top = `${coords.top + topOffset}px`;
+          widget.style.display = 'block';
+        } else {
+          widget.style.display = 'none';
+        }
+      }
+    });
+  }
+
+  removeRemoteCursor(clientId: string): void {
+    const cursor = this.remoteCursors.get(clientId);
+    if (cursor) {
+      this.editor.deltaDecorations(cursor.decorationIds, []);
+      this.remoteCursors.delete(clientId);
+    }
+
+    const widget = this.cursorWidgets.get(clientId);
+    if (widget) {
+      widget.remove();
+      this.cursorWidgets.delete(clientId);
+    }
+  }
+
+  clearAllRemoteCursors(): void {
+    this.remoteCursors.forEach((_, clientId) => this.removeRemoteCursor(clientId));
+  }
+
+  applySettings(): void {
+    const settings = this.app.getSettings();
+    this.editor.updateOptions(settings.getMonacoOptions());
+    monaco.editor.setTheme(settings.get('theme'));
+  }
+
+  private setupKeyboardShortcuts(): void {
+    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyN, () => {
+      this.app.createNewTab(this);
+    });
+
+    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyW, () => {
+      if (this.activeTabId) {
+        this.closeTab(this.activeTabId);
+      }
+    });
+
+    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Tab, () => {
+      this.switchToNextTab();
+    });
+
+    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Tab, () => {
+      this.switchToPrevTab();
+    });
+
+    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      this.app.saveState();
+    });
+
+    this.editor.onDidFocusEditorText(() => {
+      this.app.setActivePane(this);
+    });
+  }
+
+  private setupDropZones(): void {
+    const zones = this.dropZones.querySelectorAll('.drop-zone');
+
+    zones.forEach(zone => {
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (this.app.getDraggedTab()) {
+          zone.classList.add('active');
+        }
+      });
+
+      zone.addEventListener('dragleave', () => {
+        zone.classList.remove('active');
+      });
+
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('active');
+        const direction = (zone as HTMLElement).dataset.direction as SplitDirection | 'center';
+        const draggedTab = this.app.getDraggedTab();
+
+        if (draggedTab) {
+          if (direction === 'center') {
+            this.app.moveTabToPane(draggedTab.tab, draggedTab.sourcePane, this);
+          } else {
+            this.app.splitPane(this, direction, draggedTab.tab, draggedTab.sourcePane);
+          }
+        }
+      });
+    });
+  }
+
+  showDropZones(): void {
+    this.dropZones.classList.add('visible');
+  }
+
+  hideDropZones(): void {
+    this.dropZones.classList.remove('visible');
+    this.dropZones.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('active'));
+  }
+
+  addTab(tab: Tab, activate = true): void {
+    this.tabs.push(tab);
+    this.renderTab(tab);
+    if (activate) {
+      this.activateTab(tab.id);
+    }
+  }
+
+  removeTab(tabId: string): Tab | null {
+    const index = this.tabs.findIndex(t => t.id === tabId);
+    if (index === -1) return null;
+
+    const [tab] = this.tabs.splice(index, 1);
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabElement) tabElement.remove();
+
+    if (this.activeTabId === tabId) {
+      if (this.tabs.length > 0) {
+        const newIndex = Math.min(index, this.tabs.length - 1);
+        this.activateTab(this.tabs[newIndex].id);
+      } else {
+        this.activeTabId = null;
+        this.editor.setModel(null);
+      }
+    }
+
+    return tab;
+  }
+
+  private renderTab(tab: Tab): void {
+    const tabElement = document.createElement('div');
+    tabElement.className = 'tab';
+    tabElement.dataset.tabId = tab.id;
+    tabElement.draggable = true;
+
+    tabElement.addEventListener('dragstart', (e) => {
+      this.draggedTabId = tab.id;
+      tabElement.classList.add('dragging');
+      e.dataTransfer!.effectAllowed = 'move';
+      this.app.setDraggedTab(tab, this);
+      this.app.showAllDropZones();
+    });
+
+    tabElement.addEventListener('dragend', () => {
+      this.draggedTabId = null;
+      tabElement.classList.remove('dragging');
+      this.tabsContainer.querySelectorAll('.tab').forEach(el => {
+        el.classList.remove('drag-over-left', 'drag-over-right');
+      });
+      this.app.clearDraggedTab();
+      this.app.hideAllDropZones();
+    });
+
+    tabElement.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const draggedTab = this.app.getDraggedTab();
+      if (!draggedTab || (draggedTab.sourcePane === this && draggedTab.tab.id === tab.id)) return;
+
+      const rect = tabElement.getBoundingClientRect();
+      const midpoint = rect.left + rect.width / 2;
+
+      tabElement.classList.remove('drag-over-left', 'drag-over-right');
+      if (e.clientX < midpoint) {
+        tabElement.classList.add('drag-over-left');
+      } else {
+        tabElement.classList.add('drag-over-right');
+      }
+    });
+
+    tabElement.addEventListener('dragleave', () => {
+      tabElement.classList.remove('drag-over-left', 'drag-over-right');
+    });
+
+    tabElement.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const draggedTab = this.app.getDraggedTab();
+      if (!draggedTab) return;
+
+      const rect = tabElement.getBoundingClientRect();
+      const midpoint = rect.left + rect.width / 2;
+      const insertBefore = e.clientX < midpoint;
+
+      if (draggedTab.sourcePane === this) {
+        this.reorderTab(draggedTab.tab.id, tab.id, insertBefore);
+      } else {
+        this.app.moveTabToPane(draggedTab.tab, draggedTab.sourcePane, this, tab.id, insertBefore);
+      }
+
+      tabElement.classList.remove('drag-over-left', 'drag-over-right');
+    });
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'tab-title';
+    titleSpan.textContent = tab.title;
+    titleSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      this.renameTab(tab.id);
+    });
+
+    const closeButton = document.createElement('span');
+    closeButton.className = 'tab-close';
+    closeButton.innerHTML = '×';
+    closeButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeTab(tab.id);
+    });
+
+    tabElement.appendChild(titleSpan);
+    tabElement.appendChild(closeButton);
+    tabElement.addEventListener('click', () => this.activateTab(tab.id));
+
+    const addButton = this.tabsContainer.querySelector('.tab-add');
+    this.tabsContainer.insertBefore(tabElement, addButton);
+  }
+
+  private reorderTab(draggedId: string, targetId: string, insertBefore: boolean): void {
+    const draggedIndex = this.tabs.findIndex(t => t.id === draggedId);
+    const targetIndex = this.tabs.findIndex(t => t.id === targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    const [draggedTab] = this.tabs.splice(draggedIndex, 1);
+    const newIndex = insertBefore
+      ? (draggedIndex < targetIndex ? targetIndex - 1 : targetIndex)
+      : (draggedIndex < targetIndex ? targetIndex : targetIndex + 1);
+
+    this.tabs.splice(newIndex, 0, draggedTab);
+
+    this.tabsContainer.querySelectorAll('.tab').forEach(el => el.remove());
+    for (const tab of this.tabs) {
+      this.renderTab(tab);
+    }
+
+    this.tabsContainer.querySelectorAll('.tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.tabId === this.activeTabId);
+    });
+
+    this.app.scheduleSave();
+  }
+
+  activateTab(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    if (this.activeTabId) {
+      const currentTab = this.tabs.find(t => t.id === this.activeTabId);
+      if (currentTab) {
+        currentTab.viewState = this.editor.saveViewState();
+      }
+    }
+
+    this.activeTabId = tabId;
+    this.editor.setModel(tab.model);
+
+    if (tab.viewState) {
+      this.editor.restoreViewState(tab.viewState);
+    }
+
+    this.editor.focus();
+
+    this.tabsContainer.querySelectorAll('.tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.tabId === tabId);
+    });
+
+    this.app.setActivePane(this);
+    this.app.updatePageTitle(tab.title);
+  }
+
+  closeTab(tabId: string): void {
+    this.hideTab(tabId);
+  }
+
+  hideTab(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    // Mark as hidden (soft delete - don't dispose model)
+    tab.hidden = true;
+
+    // Hide the tab element in UI
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabElement) {
+      (tabElement as HTMLElement).style.display = 'none';
+    }
+
+    // If this was the active tab, switch to another visible tab
+    if (this.activeTabId === tabId) {
+      const visibleTabs = this.tabs.filter(t => !t.hidden);
+      if (visibleTabs.length > 0) {
+        this.activateTab(visibleTabs[0].id);
+      } else {
+        this.activeTabId = null;
+        this.app.handleEmptyPane(this);
+      }
+    }
+
+    // Sync hide to other clients
+    this.app.syncTabHide(tabId);
+    this.app.scheduleSave();
+  }
+
+  restoreTab(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab || !tab.hidden) return;
+
+    // Mark as visible
+    tab.hidden = false;
+
+    // Show the tab element in UI
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabElement) {
+      (tabElement as HTMLElement).style.display = '';
+    }
+
+    // Activate the restored tab
+    this.activateTab(tabId);
+
+    // Sync restore to other clients
+    this.app.syncTabRestore(tabId);
+    this.app.scheduleSave();
+  }
+
+  getHiddenTabs(): Tab[] {
+    return this.tabs.filter(t => t.hidden);
+  }
+
+  private showRestoreMenu(e: MouseEvent): void {
+    e.preventDefault();
+
+    const hiddenTabs = this.getHiddenTabs();
+    if (hiddenTabs.length === 0) {
+      return;
+    }
+
+    // Remove any existing menu
+    const existingMenu = document.querySelector('.restore-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+
+    // Create menu
+    const menu = document.createElement('div');
+    menu.className = 'restore-menu';
+    menu.style.cssText = `
+      position: fixed;
+      left: ${e.clientX}px;
+      top: ${e.clientY}px;
+      background: #252526;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      padding: 4px 0;
+      min-width: 150px;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    `;
+
+    // Add header
+    const header = document.createElement('div');
+    header.style.cssText = 'padding: 4px 12px; color: #808080; font-size: 11px; border-bottom: 1px solid #3c3c3c; margin-bottom: 4px;';
+    header.textContent = 'Restore closed tabs';
+    menu.appendChild(header);
+
+    // Add menu items for each hidden tab
+    for (const tab of hiddenTabs) {
+      const item = document.createElement('div');
+      item.style.cssText = 'padding: 6px 12px; cursor: pointer; color: #cccccc; font-size: 13px;';
+      item.textContent = tab.title;
+      item.addEventListener('mouseenter', () => {
+        item.style.backgroundColor = '#094771';
+      });
+      item.addEventListener('mouseleave', () => {
+        item.style.backgroundColor = '';
+      });
+      item.addEventListener('click', () => {
+        this.restoreTab(tab.id);
+        menu.remove();
+      });
+      menu.appendChild(item);
+    }
+
+    document.body.appendChild(menu);
+
+    // Close menu when clicking outside
+    const closeMenu = (event: MouseEvent) => {
+      if (!menu.contains(event.target as Node)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  }
+
+  private renameTab(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    const titleSpan = tabElement?.querySelector('.tab-title');
+    if (!titleSpan) return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = tab.title;
+    input.style.cssText = 'background: #3c3c3c; border: 1px solid #007acc; color: white; font-size: 13px; padding: 0 4px; width: 120px;';
+
+    let finished = false;
+    const finishRename = () => {
+      if (finished) return;
+      finished = true;
+
+      const newTitle = input.value.trim() || tab.title;
+      const oldTitle = tab.title;
+      tab.title = newTitle;
+      titleSpan.textContent = newTitle;
+
+      const newLanguage = this.app.getLanguageFromTitle(newTitle);
+      monaco.editor.setModelLanguage(tab.model, newLanguage);
+
+      input.replaceWith(titleSpan);
+      this.app.scheduleSave();
+
+      // Update page title if this is the active tab
+      if (this.activeTabId === tabId) {
+        this.app.updatePageTitle(newTitle);
+      }
+
+      // Sync rename to other clients if title actually changed
+      if (newTitle !== oldTitle) {
+        this.app.syncTabRename(tabId, newTitle);
+      }
+    };
+
+    input.addEventListener('blur', finishRename);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        finishRename();
+      } else if (e.key === 'Escape') {
+        input.value = tab.title;
+        finishRename();
+      }
+    });
+
+    titleSpan.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
+  // Rename tab from remote (doesn't trigger sync back)
+  renameTabRemote(tabId: string, newTitle: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    tab.title = newTitle;
+
+    // Update the tab UI
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    const titleSpan = tabElement?.querySelector('.tab-title');
+    if (titleSpan) {
+      titleSpan.textContent = newTitle;
+    }
+
+    // Update language based on new file extension
+    const newLanguage = this.app.getLanguageFromTitle(newTitle);
+    monaco.editor.setModelLanguage(tab.model, newLanguage);
+  }
+
+  // Hide tab from remote (doesn't trigger sync back)
+  hideTabRemote(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    tab.hidden = true;
+
+    // Hide the tab element in UI
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabElement) {
+      (tabElement as HTMLElement).style.display = 'none';
+    }
+
+    // If this was the active tab, switch to another visible tab
+    if (this.activeTabId === tabId) {
+      const visibleTabs = this.tabs.filter(t => !t.hidden);
+      if (visibleTabs.length > 0) {
+        this.activateTab(visibleTabs[0].id);
+      } else {
+        this.activeTabId = null;
+      }
+    }
+  }
+
+  // Restore tab from remote (doesn't trigger sync back)
+  restoreTabRemote(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab || !tab.hidden) return;
+
+    tab.hidden = false;
+
+    // Show the tab element in UI
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabElement) {
+      (tabElement as HTMLElement).style.display = '';
+    }
+
+    // Activate the restored tab
+    this.activateTab(tabId);
+  }
+
+  markTabModified(tabId: string, modified: boolean): void {
+    const tabElement = this.tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabElement) {
+      tabElement.classList.toggle('modified', modified);
+    }
+  }
+
+  clearAllModified(): void {
+    for (const tab of this.tabs) {
+      this.markTabModified(tab.id, false);
+    }
+  }
+
+  switchToNextTab(): void {
+    if (this.tabs.length < 2) return;
+    const currentIndex = this.tabs.findIndex(t => t.id === this.activeTabId);
+    const nextIndex = (currentIndex + 1) % this.tabs.length;
+    this.activateTab(this.tabs[nextIndex].id);
+  }
+
+  switchToPrevTab(): void {
+    if (this.tabs.length < 2) return;
+    const currentIndex = this.tabs.findIndex(t => t.id === this.activeTabId);
+    const prevIndex = (currentIndex - 1 + this.tabs.length) % this.tabs.length;
+    this.activateTab(this.tabs[prevIndex].id);
+  }
+
+  getTabs(): Tab[] {
+    return this.tabs;
+  }
+
+  getActiveTabId(): string | null {
+    return this.activeTabId;
+  }
+
+  getActiveTab(): Tab | null {
+    if (!this.activeTabId) return null;
+    return this.tabs.find(t => t.id === this.activeTabId) || null;
+  }
+
+  saveViewState(): void {
+    if (this.activeTabId) {
+      const tab = this.tabs.find(t => t.id === this.activeTabId);
+      if (tab) {
+        tab.viewState = this.editor.saveViewState();
+      }
+    }
+  }
+
+  isEmpty(): boolean {
+    return this.tabs.length === 0;
+  }
+
+  dispose(): void {
+    // Clean up scroll listener
+    if (this.scrollDisposable) {
+      this.scrollDisposable.dispose();
+      this.scrollDisposable = null;
+    }
+
+    // Remove all cursor widgets
+    this.clearAllRemoteCursors();
+
+    this.editor.dispose();
+    this.element.remove();
+  }
+
+  layout(): void {
+    this.editor.layout();
+  }
+
+  openCommandPalette(): void {
+    this.editor.focus();
+    this.editor.trigger('keyboard', 'editor.action.quickCommand', null);
+  }
+}
+
+export class EditorApp {
+  private container: HTMLElement;
+  private panes: Map<string, Pane> = new Map();
+  private activePane: Pane | null = null;
+  private storage: EditorStorage;
+  private settings: EditorSettings;
+  private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private tabCounter = 0;
+  private draggedTab: { tab: Tab; sourcePane: Pane } | null = null;
+  private layoutRoot: HTMLElement;
+  private spaceId: string | null;
+  private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private resizeHandler: (() => void) | null = null;
+  private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
+  private static actionsRegistered = false;
+  private syncClient: SyncClient | null = null;
+  private connectionStatus: HTMLElement | null = null;
+  private isRemoteUpdate = false; // Flag to prevent echo
+  private clientColors: Map<string, string> = new Map();
+  private colorPalette: string[] = [
+    '#E91E63', '#9C27B0', '#673AB7', '#3F51B5', '#2196F3',
+    '#00BCD4', '#009688', '#4CAF50', '#FF9800', '#FF5722',
+  ];
+  private knownClients: Set<string> = new Set();
+
+  constructor(container: HTMLElement, spaceId?: string) {
+    this.container = container;
+    this.spaceId = spaceId || null;
+    this.container.innerHTML = '';
+    this.storage = new EditorStorage(spaceId);
+    this.settings = new EditorSettings();
+
+    // Apply initial theme
+    monaco.editor.setTheme(this.settings.get('theme'));
+
+    // Register custom editor actions (only once)
+    if (!EditorApp.actionsRegistered) {
+      registerEditorActions(this.settings);
+      EditorApp.actionsRegistered = true;
+    }
+
+    this.layoutRoot = document.createElement('div');
+    this.layoutRoot.className = 'layout-root';
+    this.container.appendChild(this.layoutRoot);
+
+    // Add connection status indicator for collaborative spaces
+    if (this.spaceId) {
+      this.connectionStatus = document.createElement('div');
+      this.connectionStatus.className = 'connection-status connecting';
+      this.connectionStatus.innerHTML = '<span class="connection-dot"></span><span>Connecting...</span>';
+      this.container.appendChild(this.connectionStatus);
+    }
+
+    const logo = document.createElement('a');
+    logo.className = 'app-logo';
+    logo.href = '/';
+    logo.textContent = 'MONACO';
+    logo.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.location.href = '/';
+    });
+    this.container.appendChild(logo);
+
+    this.init();
+    this.setupGlobalShortcuts();
+
+    this.resizeHandler = () => {
+      this.panes.forEach(pane => pane.layout());
+    };
+    window.addEventListener('resize', this.resizeHandler);
+  }
+
+  getSettings(): EditorSettings {
+    return this.settings;
+  }
+
+  updatePageTitle(tabTitle: string): void {
+    document.title = `${tabTitle} | Monaco`;
+  }
+
+  private setupGlobalShortcuts(): void {
+    this.keydownHandler = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      if (cmdOrCtrl) {
+        switch (e.key.toLowerCase()) {
+          case 'n': // New tab
+            e.preventDefault();
+            if (this.activePane) {
+              this.createNewTab(this.activePane);
+            }
+            break;
+
+          case 'w': // Close tab
+            e.preventDefault();
+            if (this.activePane) {
+              const activeTabId = this.activePane.getActiveTabId();
+              if (activeTabId) {
+                this.activePane.closeTab(activeTabId);
+              }
+            }
+            break;
+
+          case 's': // Save
+            e.preventDefault();
+            this.saveState();
+            break;
+
+          case 't': // Prevent new browser tab
+            e.preventDefault();
+            if (this.activePane) {
+              this.createNewTab(this.activePane);
+            }
+            break;
+
+          case 'r': // Prevent reload
+            e.preventDefault();
+            break;
+
+          case 'tab': // Tab switching
+            e.preventDefault();
+            if (this.activePane) {
+              if (e.shiftKey) {
+                this.activePane.switchToPrevTab();
+              } else {
+                this.activePane.switchToNextTab();
+              }
+            }
+            break;
+        }
+      }
+
+      // F1 or Cmd+P or Cmd+Shift+P - Open command palette
+      if (e.key === 'F1' || (cmdOrCtrl && e.key.toLowerCase() === 'p')) {
+        e.preventDefault();
+        if (this.activePane) {
+          this.activePane.openCommandPalette();
+        }
+      }
+
+      // Prevent F5 reload
+      if (e.key === 'F5') {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', this.keydownHandler);
+
+    // Prevent accidental navigation
+    this.beforeUnloadHandler = (e: BeforeUnloadEvent) => {
+      // Check if any pane has modified tabs
+      let hasModified = false;
+      this.panes.forEach(pane => {
+        const tabs = pane.getTabs();
+        // We don't track modified state separately, but we can warn anyway
+        if (tabs.length > 0) {
+          hasModified = true;
+        }
+      });
+
+      if (hasModified) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
+  }
+
+  private async init(): Promise<void> {
+    await this.storage.init();
+    const state = await this.storage.load();
+
+    if (state && state.panes && state.panes.length > 0 && state.layout) {
+      this.tabCounter = state.tabCounter;
+      this.restoreLayout(state);
+    } else {
+      const pane = new Pane(this);
+      this.panes.set(pane.id, pane);
+      this.layoutRoot.appendChild(pane.element);
+      this.activePane = pane;
+      this.createNewTab(pane);
+    }
+
+    // Initialize sync client for collaborative spaces
+    if (this.spaceId) {
+      this.initSync();
+    }
+  }
+
+  private initSync(): void {
+    if (!this.spaceId) return;
+
+    this.syncClient = new SyncClient({
+      spaceId: this.spaceId,
+      onConnectionChange: (connected) => {
+        if (this.connectionStatus) {
+          this.connectionStatus.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
+          this.connectionStatus.innerHTML = `<span class="connection-dot"></span><span>${connected ? 'Connected' : 'Disconnected'}</span>`;
+        }
+
+        // Send full state when reconnecting
+        if (connected) {
+          this.sendFullSync();
+        }
+      },
+      onSync: (state) => {
+        // Full state sync from server
+        if (state && state.tabs && state.tabs.length > 0) {
+          this.isRemoteUpdate = true;
+          this.syncFromRemote(state);
+          this.isRemoteUpdate = false;
+        }
+      },
+      onTabUpdate: (tabId, content, title) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteTabUpdate(tabId, content, title);
+        this.isRemoteUpdate = false;
+      },
+      onTabCreate: (tabId, title, content) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteTabCreate(tabId, title, content);
+        this.isRemoteUpdate = false;
+      },
+      onTabClose: (tabId) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteTabClose(tabId);
+        this.isRemoteUpdate = false;
+      },
+      onTabRename: (tabId, title) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteTabRename(tabId, title);
+        this.isRemoteUpdate = false;
+      },
+      onTabHide: (tabId) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteTabHide(tabId);
+        this.isRemoteUpdate = false;
+      },
+      onTabRestore: (tabId) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteTabRestore(tabId);
+        this.isRemoteUpdate = false;
+      },
+      onLayoutUpdate: (layout, panes) => {
+        this.isRemoteUpdate = true;
+        this.handleRemoteLayoutUpdate(layout, panes);
+        this.isRemoteUpdate = false;
+      },
+      onAwarenessChange: (clients) => {
+        this.handleAwarenessChange(clients);
+      },
+    });
+  }
+
+  private sendFullSync(): void {
+    if (!this.syncClient || !this.activePane) return;
+
+    const tabs: Array<{ id: string; title: string; content: string }> = [];
+    this.panes.forEach(pane => {
+      pane.getTabs().forEach(tab => {
+        tabs.push({
+          id: tab.id,
+          title: tab.title,
+          content: tab.model.getValue(),
+        });
+      });
+    });
+
+    this.syncClient.sendFullSync({
+      tabs,
+      activeTabId: this.activePane.getActiveTabId(),
+      tabCounter: this.tabCounter,
+    });
+  }
+
+  private syncFromRemote(state: { tabs: Array<{ id: string; title: string; content: string }>; activeTabId: string | null; tabCounter: number }): void {
+    // For simplicity, sync to first pane only (multi-pane sync would need more work)
+    const pane = this.panes.values().next().value as Pane | undefined;
+    if (!pane) return;
+
+    // Update existing tabs or create new ones
+    for (const remoteTab of state.tabs) {
+      const existingTab = pane.getTabs().find(t => t.id === remoteTab.id);
+      if (existingTab) {
+        // Update content if different
+        if (existingTab.model.getValue() !== remoteTab.content) {
+          existingTab.model.setValue(remoteTab.content);
+        }
+        if (existingTab.title !== remoteTab.title) {
+          existingTab.title = remoteTab.title;
+        }
+      } else {
+        // Create new tab
+        const language = this.getLanguageFromTitle(remoteTab.title);
+        const model = monaco.editor.createModel(remoteTab.content, language);
+        const tab: Tab = {
+          id: remoteTab.id,
+          title: remoteTab.title,
+          model,
+          viewState: null,
+        };
+        this.setupTabSync(tab, pane);
+        pane.addTab(tab, false);
+      }
+    }
+
+    // Sync tab counter
+    if (state.tabCounter > this.tabCounter) {
+      this.tabCounter = state.tabCounter;
+    }
+  }
+
+  private handleRemoteTabUpdate(tabId: string, content: string, title?: string): void {
+    // Find the tab across all panes
+    for (const pane of this.panes.values()) {
+      const tab = pane.getTabs().find(t => t.id === tabId);
+      if (tab) {
+        // Update content if different
+        if (tab.model.getValue() !== content) {
+          tab.model.setValue(content);
+        }
+        if (title && tab.title !== title) {
+          tab.title = title;
+          // Update tab UI would go here
+        }
+        break;
+      }
+    }
+  }
+
+  private handleRemoteTabCreate(tabId: string, title: string, content: string): void {
+    // Add to first pane
+    const pane = this.panes.values().next().value as Pane | undefined;
+    if (!pane) return;
+
+    // Check if tab already exists
+    if (pane.getTabs().find(t => t.id === tabId)) return;
+
+    const language = this.getLanguageFromTitle(title);
+    const model = monaco.editor.createModel(content, language);
+    const tab: Tab = {
+      id: tabId,
+      title,
+      model,
+      viewState: null,
+    };
+    this.setupTabSync(tab, pane);
+    pane.addTab(tab, false);
+  }
+
+  private handleRemoteTabClose(tabId: string): void {
+    // Find and close the tab
+    for (const pane of this.panes.values()) {
+      const tab = pane.getTabs().find(t => t.id === tabId);
+      if (tab) {
+        pane.removeTab(tabId);
+        tab.model.dispose();
+        break;
+      }
+    }
+  }
+
+  private handleRemoteTabRename(tabId: string, title: string): void {
+    // Find and rename the tab
+    for (const pane of this.panes.values()) {
+      const tab = pane.getTabs().find(t => t.id === tabId);
+      if (tab) {
+        pane.renameTabRemote(tabId, title);
+        break;
+      }
+    }
+  }
+
+  private handleRemoteTabHide(tabId: string): void {
+    // Find and hide the tab
+    for (const pane of this.panes.values()) {
+      const tab = pane.getTabs().find(t => t.id === tabId);
+      if (tab) {
+        pane.hideTabRemote(tabId);
+        break;
+      }
+    }
+  }
+
+  private handleRemoteTabRestore(tabId: string): void {
+    // Find and restore the tab
+    for (const pane of this.panes.values()) {
+      const tab = pane.getTabs().find(t => t.id === tabId);
+      if (tab) {
+        pane.restoreTabRemote(tabId);
+        break;
+      }
+    }
+  }
+
+  private handleRemoteLayoutUpdate(layout: SplitData, panes: Array<{ id: string; tabIds: string[]; activeTabId: string | null }>): void {
+    // Build a map of all tabs across all panes (to preserve content/models)
+    const allTabs = new Map<string, Tab>();
+    this.panes.forEach(pane => {
+      pane.getTabs().forEach(tab => {
+        allTabs.set(tab.id, tab);
+      });
+    });
+
+    // Dispose existing panes (but not the tab models)
+    this.panes.forEach(pane => {
+      // Remove tabs without disposing models
+      pane.getTabs().forEach(tab => {
+        pane.removeTab(tab.id);
+      });
+      pane.dispose();
+    });
+    this.panes.clear();
+
+    // Clear layout root
+    this.layoutRoot.innerHTML = '';
+
+    // Build pane data map for restoreLayoutNode
+    const paneDataMap = new Map<string, PaneData>();
+    for (const paneState of panes) {
+      paneDataMap.set(paneState.id, {
+        id: paneState.id,
+        tabs: paneState.tabIds.map(tabId => {
+          const tab = allTabs.get(tabId);
+          if (tab) {
+            return {
+              id: tab.id,
+              title: tab.title,
+              content: tab.model.getValue(),
+              viewState: null,
+            };
+          }
+          return { id: tabId, title: 'Untitled', content: '', viewState: null };
+        }),
+        activeTabId: paneState.activeTabId,
+      });
+    }
+
+    // Restore layout from remote data
+    this.restoreLayoutNode(layout, this.layoutRoot, paneDataMap);
+
+    // Set active pane
+    if (this.panes.size > 0) {
+      this.activePane = this.panes.values().next().value;
+    }
+
+    // Re-layout all panes
+    this.panes.forEach(pane => pane.layout());
+  }
+
+  private sendLayoutUpdate(): void {
+    if (!this.syncClient || this.isRemoteUpdate) return;
+
+    const layout = this.serializeLayoutForSync(this.layoutRoot);
+    const panes: Array<{ id: string; tabIds: string[]; activeTabId: string | null }> = [];
+
+    this.panes.forEach(pane => {
+      panes.push({
+        id: pane.id,
+        tabIds: pane.getTabs().map(t => t.id),
+        activeTabId: pane.getActiveTabId(),
+      });
+    });
+
+    this.syncClient.sendLayoutUpdate(layout, panes);
+  }
+
+  private serializeLayoutForSync(element: HTMLElement): SplitData {
+    // Similar to serializeLayout but without sizes
+    const splitContainer = element.querySelector(':scope > .split-container');
+    if (splitContainer) {
+      const isHorizontal = splitContainer.classList.contains('split-horizontal');
+      const children = Array.from(splitContainer.querySelectorAll(':scope > .split-child')) as HTMLElement[];
+
+      return {
+        type: 'split',
+        direction: isHorizontal ? 'horizontal' : 'vertical',
+        children: children.map(child => this.serializeLayoutForSync(child)),
+        // No sizes - each client sizes locally
+      };
+    }
+
+    const pane = element.querySelector(':scope > .pane');
+    if (pane) {
+      return {
+        type: 'pane',
+        paneId: (pane as HTMLElement).dataset.paneId,
+      };
+    }
+
+    const nestedSplit = element.querySelector('.split-container');
+    if (nestedSplit) {
+      return this.serializeLayoutForSync(element.querySelector('.split-container')!.parentElement!);
+    }
+
+    return { type: 'pane' };
+  }
+
+  private setupTabSync(tab: Tab, pane: Pane): void {
+    tab.model.onDidChangeContent(() => {
+      pane.markTabModified(tab.id, true);
+      this.scheduleSave();
+
+      // Send to sync client if not a remote update
+      if (!this.isRemoteUpdate && this.syncClient) {
+        this.syncClient.sendTabUpdate(tab.id, tab.model.getValue(), tab.title);
+      }
+    });
+  }
+
+  private restoreLayout(state: StoredState): void {
+    const paneDataMap = new Map(state.panes.map(p => [p.id, p]));
+    this.restoreLayoutNode(state.layout, this.layoutRoot, paneDataMap);
+
+    if (this.panes.size > 0) {
+      this.activePane = this.panes.values().next().value;
+
+      // Update page title with active tab
+      if (this.activePane) {
+        const activeTab = this.activePane.getActiveTab();
+        if (activeTab) {
+          this.updatePageTitle(activeTab.title);
+        }
+      }
+    }
+  }
+
+  private restoreLayoutNode(
+    node: SplitData,
+    parent: HTMLElement,
+    paneDataMap: Map<string, PaneData>
+  ): void {
+    if (node.type === 'pane' && node.paneId) {
+      const paneData = paneDataMap.get(node.paneId);
+      const pane = new Pane(this, node.paneId);
+      this.panes.set(pane.id, pane);
+      parent.appendChild(pane.element);
+
+      if (paneData) {
+        for (const tabData of paneData.tabs) {
+          const tab = this.createTabFromData(tabData);
+          pane.addTab(tab, false);
+        }
+        if (paneData.activeTabId) {
+          pane.activateTab(paneData.activeTabId);
+        } else if (paneData.tabs.length > 0) {
+          pane.activateTab(paneData.tabs[0].id);
+        }
+      }
+    } else if (node.type === 'split' && node.children) {
+      const splitContainer = document.createElement('div');
+      splitContainer.className = `split-container split-${node.direction}`;
+      parent.appendChild(splitContainer);
+
+      node.children.forEach((child, index) => {
+        const childWrapper = document.createElement('div');
+        childWrapper.className = 'split-child';
+        if (node.sizes && node.sizes[index]) {
+          childWrapper.style.flexBasis = `${node.sizes[index]}%`;
+        }
+        splitContainer.appendChild(childWrapper);
+
+        if (index < node.children!.length - 1) {
+          const resizer = document.createElement('div');
+          resizer.className = `resizer resizer-${node.direction}`;
+          this.setupResizer(resizer, splitContainer, node.direction!);
+          splitContainer.appendChild(resizer);
+        }
+
+        this.restoreLayoutNode(child, childWrapper, paneDataMap);
+      });
+    }
+  }
+
+  private setupResizer(resizer: HTMLElement, container: HTMLElement, direction: 'horizontal' | 'vertical'): void {
+    let startPos = 0;
+    let startSizes: number[] = [];
+
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault();
+      startPos = direction === 'horizontal' ? e.clientX : e.clientY;
+
+      const children = Array.from(container.querySelectorAll(':scope > .split-child')) as HTMLElement[];
+      startSizes = children.map(child => {
+        const rect = child.getBoundingClientRect();
+        return direction === 'horizontal' ? rect.width : rect.height;
+      });
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
+      document.body.style.userSelect = 'none';
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const currentPos = direction === 'horizontal' ? e.clientX : e.clientY;
+      const delta = currentPos - startPos;
+
+      const children = Array.from(container.querySelectorAll(':scope > .split-child')) as HTMLElement[];
+      const resizerIndex = Array.from(container.querySelectorAll(':scope > .resizer')).indexOf(resizer);
+
+      const totalSize = startSizes.reduce((a, b) => a + b, 0);
+      const newSize1 = Math.max(100, startSizes[resizerIndex] + delta);
+      const newSize2 = Math.max(100, startSizes[resizerIndex + 1] - delta);
+
+      children[resizerIndex].style.flexBasis = `${(newSize1 / totalSize) * 100}%`;
+      children[resizerIndex + 1].style.flexBasis = `${(newSize2 / totalSize) * 100}%`;
+
+      this.panes.forEach(pane => pane.layout());
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      this.scheduleSave();
+    };
+
+    resizer.addEventListener('mousedown', onMouseDown);
+  }
+
+  private createTabFromData(data: TabData, pane?: Pane): Tab {
+    const language = this.getLanguageFromTitle(data.title);
+    const model = monaco.editor.createModel(data.content, language);
+
+    const tab: Tab = {
+      id: data.id,
+      title: data.title,
+      model,
+      viewState: data.viewState,
+    };
+
+    model.onDidChangeContent(() => {
+      this.panes.forEach(p => {
+        p.markTabModified(tab.id, true);
+      });
+      this.scheduleSave();
+
+      // Send to sync client if not a remote update
+      if (!this.isRemoteUpdate && this.syncClient) {
+        this.syncClient.sendTabUpdate(tab.id, tab.model.getValue(), tab.title);
+      }
+    });
+
+    return tab;
+  }
+
+  createNewTab(pane: Pane, title?: string, content: string = ''): Tab {
+    this.tabCounter++;
+    const tabTitle = title || `untitled-${this.tabCounter}.txt`;
+    const id = `tab-${Date.now()}-${this.tabCounter}`;
+
+    const language = this.getLanguageFromTitle(tabTitle);
+    const model = monaco.editor.createModel(content, language);
+
+    const tab: Tab = { id, title: tabTitle, model, viewState: null };
+
+    model.onDidChangeContent(() => {
+      pane.markTabModified(tab.id, true);
+      this.scheduleSave();
+
+      // Send to sync client if not a remote update
+      if (!this.isRemoteUpdate && this.syncClient) {
+        this.syncClient.sendTabUpdate(tab.id, tab.model.getValue(), tab.title);
+      }
+    });
+
+    pane.addTab(tab);
+    this.scheduleSave();
+
+    // Notify sync client about new tab
+    if (!this.isRemoteUpdate && this.syncClient) {
+      this.syncClient.sendTabCreate(tab.id, tab.title, content);
+    }
+
+    return tab;
+  }
+
+  getLanguageFromTitle(title: string): string {
+    const ext = title.split('.').pop()?.toLowerCase();
+    const langMap: Record<string, string> = {
+      'js': 'javascript',
+      'ts': 'typescript',
+      'jsx': 'javascript',
+      'tsx': 'typescript',
+      'py': 'python',
+      'json': 'json',
+      'html': 'html',
+      'css': 'css',
+      'md': 'markdown',
+      'yaml': 'yaml',
+      'yml': 'yaml',
+      'xml': 'xml',
+      'sql': 'sql',
+      'sh': 'shell',
+      'bash': 'shell',
+      'go': 'go',
+      'rs': 'rust',
+      'java': 'java',
+      'c': 'c',
+      'cpp': 'cpp',
+      'h': 'c',
+      'hpp': 'cpp',
+    };
+    return langMap[ext || ''] || 'plaintext';
+  }
+
+  setActivePane(pane: Pane): void {
+    this.activePane = pane;
+  }
+
+  setDraggedTab(tab: Tab, sourcePane: Pane): void {
+    this.draggedTab = { tab, sourcePane };
+  }
+
+  getDraggedTab(): { tab: Tab; sourcePane: Pane } | null {
+    return this.draggedTab;
+  }
+
+  clearDraggedTab(): void {
+    this.draggedTab = null;
+  }
+
+  showAllDropZones(): void {
+    this.panes.forEach(pane => pane.showDropZones());
+  }
+
+  hideAllDropZones(): void {
+    this.panes.forEach(pane => pane.hideDropZones());
+  }
+
+  moveTabToPane(tab: Tab, sourcePane: Pane, targetPane: Pane, beforeTabId?: string, insertBefore?: boolean): void {
+    sourcePane.removeTab(tab.id);
+
+    if (beforeTabId) {
+      const tabs = targetPane.getTabs();
+      const targetIndex = tabs.findIndex(t => t.id === beforeTabId);
+      if (targetIndex !== -1) {
+        const insertIndex = insertBefore ? targetIndex : targetIndex + 1;
+        tabs.splice(insertIndex, 0, tab);
+        // Re-render tabs
+        const tabsContainer = targetPane.element.querySelector('.tabs')!;
+        tabsContainer.querySelectorAll('.tab').forEach(el => el.remove());
+        for (const t of tabs) {
+          targetPane.addTab(t, false);
+        }
+        targetPane.activateTab(tab.id);
+        this.scheduleSave();
+        this.sendLayoutUpdate();
+        return;
+      }
+    }
+
+    targetPane.addTab(tab);
+
+    if (sourcePane.isEmpty()) {
+      this.handleEmptyPane(sourcePane);
+    } else {
+      // Only send layout update if handleEmptyPane wasn't called (it sends its own)
+      this.sendLayoutUpdate();
+    }
+
+    this.scheduleSave();
+  }
+
+  splitPane(targetPane: Pane, direction: SplitDirection, tab: Tab, sourcePane: Pane): void {
+    sourcePane.removeTab(tab.id);
+
+    const parent = targetPane.element.parentElement!;
+    const isHorizontal = direction === 'left' || direction === 'right';
+    const splitDirection = isHorizontal ? 'horizontal' : 'vertical';
+
+    const splitContainer = document.createElement('div');
+    splitContainer.className = `split-container split-${splitDirection}`;
+
+    const existingWrapper = document.createElement('div');
+    existingWrapper.className = 'split-child';
+    existingWrapper.style.flexBasis = '50%';
+
+    const newWrapper = document.createElement('div');
+    newWrapper.className = 'split-child';
+    newWrapper.style.flexBasis = '50%';
+
+    const newPane = new Pane(this);
+    this.panes.set(newPane.id, newPane);
+    newPane.addTab(tab);
+
+    const resizer = document.createElement('div');
+    resizer.className = `resizer resizer-${splitDirection}`;
+    this.setupResizer(resizer, splitContainer, splitDirection);
+
+    parent.replaceChild(splitContainer, targetPane.element);
+
+    if (direction === 'left' || direction === 'top') {
+      newWrapper.appendChild(newPane.element);
+      existingWrapper.appendChild(targetPane.element);
+      splitContainer.appendChild(newWrapper);
+      splitContainer.appendChild(resizer);
+      splitContainer.appendChild(existingWrapper);
+    } else {
+      existingWrapper.appendChild(targetPane.element);
+      newWrapper.appendChild(newPane.element);
+      splitContainer.appendChild(existingWrapper);
+      splitContainer.appendChild(resizer);
+      splitContainer.appendChild(newWrapper);
+    }
+
+    if (sourcePane.isEmpty()) {
+      this.handleEmptyPane(sourcePane);
+    }
+
+    this.panes.forEach(pane => pane.layout());
+    this.scheduleSave();
+    this.sendLayoutUpdate();
+  }
+
+  handleEmptyPane(pane: Pane): void {
+    if (this.panes.size <= 1) {
+      this.createNewTab(pane);
+      return;
+    }
+
+    const paneElement = pane.element;
+    const parent = paneElement.parentElement;
+
+    if (!parent) return;
+
+    if (parent.classList.contains('split-child')) {
+      const splitContainer = parent.parentElement;
+      if (!splitContainer) return;
+
+      const siblings = Array.from(splitContainer.querySelectorAll(':scope > .split-child'));
+      const siblingIndex = siblings.indexOf(parent);
+      const otherIndex = siblingIndex === 0 ? 1 : 0;
+      const otherWrapper = siblings[otherIndex] as HTMLElement;
+
+      const grandParent = splitContainer.parentElement;
+      if (!grandParent) return;
+
+      const otherContent = otherWrapper.firstElementChild;
+      if (otherContent) {
+        grandParent.replaceChild(otherContent, splitContainer);
+      }
+    }
+
+    this.panes.delete(pane.id);
+    pane.dispose();
+
+    if (this.activePane === pane) {
+      this.activePane = this.panes.values().next().value || null;
+    }
+
+    this.panes.forEach(p => p.layout());
+    this.scheduleSave();
+    this.sendLayoutUpdate();
+  }
+
+  scheduleSave(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(() => this.saveState(), 500);
+  }
+
+  async saveState(): Promise<void> {
+    this.panes.forEach(pane => pane.saveViewState());
+
+    const panes: PaneData[] = [];
+    this.panes.forEach(pane => {
+      panes.push({
+        id: pane.id,
+        tabs: pane.getTabs().map(tab => ({
+          id: tab.id,
+          title: tab.title,
+          content: tab.model.getValue(),
+          viewState: tab.viewState,
+        })),
+        activeTabId: pane.getActiveTabId(),
+      });
+    });
+
+    const layout = this.serializeLayout(this.layoutRoot);
+
+    const state: StoredState = {
+      layout,
+      panes,
+      tabCounter: this.tabCounter,
+    };
+
+    await this.storage.save(state);
+
+    this.panes.forEach(pane => pane.clearAllModified());
+  }
+
+  private serializeLayout(element: HTMLElement): SplitData {
+    const splitContainer = element.querySelector(':scope > .split-container');
+    if (splitContainer) {
+      const isHorizontal = splitContainer.classList.contains('split-horizontal');
+      const children = Array.from(splitContainer.querySelectorAll(':scope > .split-child')) as HTMLElement[];
+      const sizes = children.map(child => {
+        const basis = child.style.flexBasis;
+        return parseFloat(basis) || 50;
+      });
+
+      return {
+        type: 'split',
+        direction: isHorizontal ? 'horizontal' : 'vertical',
+        children: children.map(child => this.serializeLayout(child)),
+        sizes,
+      };
+    }
+
+    const pane = element.querySelector(':scope > .pane');
+    if (pane) {
+      return {
+        type: 'pane',
+        paneId: (pane as HTMLElement).dataset.paneId,
+      };
+    }
+
+    const nestedSplit = element.querySelector('.split-container');
+    if (nestedSplit) {
+      return this.serializeLayout(element.querySelector('.split-container')!.parentElement!);
+    }
+
+    return { type: 'pane' };
+  }
+
+  destroy(): void {
+    // Remove event listeners
+    if (this.keydownHandler) {
+      window.removeEventListener('keydown', this.keydownHandler);
+    }
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+    }
+    if (this.beforeUnloadHandler) {
+      window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    }
+
+    // Clear save timeout
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+
+    // Disconnect sync client
+    if (this.syncClient) {
+      this.syncClient.destroy();
+      this.syncClient = null;
+    }
+
+    // Dispose all panes
+    this.panes.forEach(pane => pane.dispose());
+    this.panes.clear();
+
+    // Clear container
+    this.container.innerHTML = '';
+  }
+
+  private getClientColor(clientId: string): string {
+    if (!this.clientColors.has(clientId)) {
+      const colorIndex = this.clientColors.size % this.colorPalette.length;
+      this.clientColors.set(clientId, this.colorPalette[colorIndex]);
+    }
+    return this.clientColors.get(clientId)!;
+  }
+
+  sendCursorUpdate(tabId: string, cursor: { line: number; column: number }): void {
+    if (this.syncClient) {
+      this.syncClient.updateAwareness({ tabId, cursor });
+    }
+  }
+
+  sendSelectionUpdate(tabId: string, selection: { startLine: number; startColumn: number; endLine: number; endColumn: number }): void {
+    if (this.syncClient) {
+      this.syncClient.updateAwareness({ tabId, selection });
+    }
+  }
+
+  syncTabRename(tabId: string, title: string): void {
+    if (!this.isRemoteUpdate && this.syncClient) {
+      this.syncClient.sendTabRename(tabId, title);
+    }
+  }
+
+  syncTabHide(tabId: string): void {
+    if (!this.isRemoteUpdate && this.syncClient) {
+      this.syncClient.sendTabHide(tabId);
+    }
+  }
+
+  syncTabRestore(tabId: string): void {
+    if (!this.isRemoteUpdate && this.syncClient) {
+      this.syncClient.sendTabRestore(tabId);
+    }
+  }
+
+  private handleAwarenessChange(clients: Record<string, { color?: string; tabId?: string; cursor?: { line: number; column: number }; selection?: { startLine: number; startColumn: number; endLine: number; endColumn: number } }>): void {
+    // Get our own client ID to skip
+    const myClientId = this.syncClient?.getClientId();
+
+    // Track which clients are currently connected
+    const currentClientIds = new Set(Object.keys(clients));
+
+    // Find clients that have disconnected
+    const disconnectedClients = [...this.knownClients].filter(id => !currentClientIds.has(id));
+
+    // Update remote cursors in all panes
+    this.panes.forEach(pane => {
+      // Remove cursors for disconnected clients
+      for (const clientId of disconnectedClients) {
+        pane.removeRemoteCursor(clientId);
+      }
+
+      // Get active tab ID for this pane
+      const activeTabId = pane.getActiveTabId();
+
+      // Update or add cursors for each connected client
+      for (const [clientId, state] of Object.entries(clients)) {
+        // Skip our own cursor
+        if (clientId === myClientId) continue;
+
+        // Only show cursor if on the same tab
+        if (state.tabId && state.tabId !== activeTabId) {
+          // Remote user is on a different tab - hide their cursor
+          pane.removeRemoteCursor(clientId);
+          continue;
+        }
+
+        // Use server-provided color or generate one
+        const color = state.color || this.getClientColor(clientId);
+        pane.updateRemoteCursor(clientId, color, state.cursor, state.selection);
+      }
+    });
+
+    // Update known clients
+    this.knownClients = currentClientIds;
+  }
+}

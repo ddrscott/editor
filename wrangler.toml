@@ -1,0 +1,24 @@
+name = "monaco-editor"
+main = "worker/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve static assets with binding to worker
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+
+# Durable Objects
+[durable_objects]
+bindings = [
+  { name = "SPACE_ROOM", class_name = "SpaceRoom" }
+]
+
+# Migration for Durable Objects
+[[migrations]]
+tag = "v1"
+new_classes = ["SpaceRoom"]
+
+# Development settings
+[dev]
+port = 8787
