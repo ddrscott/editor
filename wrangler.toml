@@ -29,6 +29,13 @@ tag = "v3"
 new_sqlite_classes = ["SpaceRoom"]
 deleted_classes = ["SpaceRoomLegacy"]
 
+# D1 Database for global space queries
+[[d1_databases]]
+binding = "DB"
+database_name = "monaco-spaces"
+database_id = "local"
+migrations_dir = "migrations"
+
 # Development settings
 [dev]
 port = 8787

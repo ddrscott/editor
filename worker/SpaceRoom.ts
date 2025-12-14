@@ -105,15 +105,22 @@ function generateColor(): string {
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+interface Env {
+  DB: D1Database;
+}
+
 export class SpaceRoom {
   private state: DurableObjectState;
+  private env: Env;
   private sessions: Map<string, Session> = new Map();
   private documentState: DocumentState | null = null;
   private layoutState: LayoutState | null = null;
   private sql: SqlStorage;
+  private spaceId: string | null = null;
 
-  constructor(state: DurableObjectState) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state;
+    this.env = env;
     this.sql = state.storage.sql;
 
     // Initialize SQLite schema and load state
@@ -182,12 +189,37 @@ export class SpaceRoom {
   }
 
   async fetch(request: Request): Promise<Response> {
+    // Extract spaceId from URL if not already set
+    if (!this.spaceId) {
+      const url = new URL(request.url);
+      const match = url.pathname.match(/\/ws\/space\/(.+)/);
+      if (match) {
+        this.spaceId = match[1];
+      }
+    }
+
     // Handle WebSocket upgrade
     if (request.headers.get('Upgrade') === 'websocket') {
       return this.handleWebSocket();
     }
 
     return new Response('Expected WebSocket', { status: 400 });
+  }
+
+  private async trackWrite(): Promise<void> {
+    if (!this.spaceId || !this.env.DB) return;
+
+    try {
+      await this.env.DB.prepare(`
+        INSERT INTO spaces (id, reads, writes)
+        VALUES (?, 0, 1)
+        ON CONFLICT(id) DO UPDATE SET
+          writes = writes + 1,
+          updated_at = datetime('now')
+      `).bind(this.spaceId).run();
+    } catch (error) {
+      console.error('Failed to track space write:', error);
+    }
   }
 
   private handleWebSocket(): Response {
@@ -298,6 +330,7 @@ export class SpaceRoom {
           content: message.content,
         });
         this.persistState();
+        this.trackWrite(); // Track in D1
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;
@@ -307,6 +340,7 @@ export class SpaceRoom {
         if (this.documentState) {
           this.documentState.tabs = this.documentState.tabs.filter(t => t.id !== message.tabId);
           this.persistState();
+          this.trackWrite(); // Track in D1
         }
         // Broadcast to all other clients
         this.broadcast(clientId, message);
@@ -355,6 +389,7 @@ export class SpaceRoom {
         // Store the full state
         this.documentState = message.state;
         this.persistState();
+        this.trackWrite(); // Track in D1
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;
@@ -375,6 +410,7 @@ export class SpaceRoom {
           panes: message.panes,
         };
         this.persistLayout();
+        this.trackWrite(); // Track in D1
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;

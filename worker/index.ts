@@ -5,6 +5,7 @@ export { SpaceRoom };
 interface Env {
   SPACE_ROOM: DurableObjectNamespace;
   ASSETS?: { fetch: (request: Request) => Promise<Response> };
+  DB: D1Database;
 }
 
 export default {
@@ -53,7 +54,38 @@ export default {
 };
 
 async function handleWebSocket(request: Request, env: Env, spaceId: string): Promise<Response> {
+  // Track read in D1 (upsert space and increment reads)
+  await trackSpaceRead(env.DB, spaceId);
+
   const id = env.SPACE_ROOM.idFromName(spaceId);
   const room = env.SPACE_ROOM.get(id);
   return room.fetch(request);
+}
+
+async function trackSpaceRead(db: D1Database, spaceId: string): Promise<void> {
+  try {
+    await db.prepare(`
+      INSERT INTO spaces (id, reads, writes)
+      VALUES (?, 1, 0)
+      ON CONFLICT(id) DO UPDATE SET
+        reads = reads + 1,
+        updated_at = datetime('now')
+    `).bind(spaceId).run();
+  } catch (error) {
+    console.error('Failed to track space read:', error);
+  }
+}
+
+export async function trackSpaceWrite(db: D1Database, spaceId: string): Promise<void> {
+  try {
+    await db.prepare(`
+      INSERT INTO spaces (id, reads, writes)
+      VALUES (?, 0, 1)
+      ON CONFLICT(id) DO UPDATE SET
+        writes = writes + 1,
+        updated_at = datetime('now')
+    `).bind(spaceId).run();
+  } catch (error) {
+    console.error('Failed to track space write:', error);
+  }
 }
