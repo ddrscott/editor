@@ -1,6 +1,8 @@
 import * as monaco from 'monaco-editor';
 import { marked } from 'marked';
 import { SyncClient } from '../sync/SyncClient';
+import { RunnerManager } from '../runners/RunnerManager';
+import { OutputPane } from '../output/OutputPane';
 
 interface TabData {
   id: string;
@@ -999,6 +1001,15 @@ class Pane {
       addSeparator();
     }
 
+    // Run option (for runnable files like .java)
+    if (this.app.canRunFile(tab.title)) {
+      menu.appendChild(createMenuItem(
+        'Run Program',
+        () => this.app.runActiveFile()
+      ));
+      addSeparator();
+    }
+
     // Standard tab actions
     menu.appendChild(createMenuItem('Rename', () => this.renameTab(tab.id)));
     menu.appendChild(createMenuItem('Close', () => this.closeTab(tab.id)));
@@ -1254,6 +1265,9 @@ export class EditorApp {
     '#00BCD4', '#009688', '#4CAF50', '#FF9800', '#FF5722',
   ];
   private knownClients: Set<string> = new Set();
+  private runnerManager: RunnerManager;
+  private outputPane: OutputPane | null = null;
+  private outputSplitContainer: HTMLElement | null = null;
 
   constructor(container: HTMLElement, spaceId?: string) {
     this.container = container;
@@ -1270,6 +1284,9 @@ export class EditorApp {
       EditorApp.actionsRegistered = true;
     }
 
+    // Initialize runner manager for code execution
+    this.runnerManager = new RunnerManager();
+
     this.layoutRoot = document.createElement('div');
     this.layoutRoot.className = 'layout-root';
     this.container.appendChild(this.layoutRoot);
@@ -1281,6 +1298,14 @@ export class EditorApp {
       this.connectionStatus.innerHTML = '<span class="connection-dot"></span><span>Connecting...</span>';
       this.container.appendChild(this.connectionStatus);
     }
+
+    // Add Run button to top bar
+    const runButton = document.createElement('button');
+    runButton.className = 'run-button';
+    runButton.innerHTML = '&#9654; Run';
+    runButton.title = 'Run Program (Cmd+R)';
+    runButton.addEventListener('click', () => this.runActiveFile());
+    this.container.appendChild(runButton);
 
     const logo = document.createElement('a');
     logo.className = 'app-logo';
@@ -1345,8 +1370,9 @@ export class EditorApp {
             }
             break;
 
-          case 'r': // Prevent reload
+          case 'r': // Run program (Cmd+R)
             e.preventDefault();
+            this.runActiveFile();
             break;
 
           case 'tab': // Tab switching
@@ -2283,6 +2309,14 @@ export class EditorApp {
       this.syncClient = null;
     }
 
+    // Close output pane if open
+    if (this.outputPane) {
+      this.closeOutputPane();
+    }
+
+    // Dispose runner manager
+    this.runnerManager.dispose();
+
     // Dispose all panes
     this.panes.forEach(pane => pane.dispose());
     this.panes.clear();
@@ -2536,5 +2570,116 @@ export class EditorApp {
     });
 
     return `<div class="markdown-preview-content">${html}</div>`;
+  }
+
+  // ============================================================
+  // Code Execution (Java, etc.)
+  // ============================================================
+
+  /**
+   * Check if a file can be run (has a runner available)
+   */
+  canRunFile(filename: string): boolean {
+    return this.runnerManager.canRun(filename);
+  }
+
+  /**
+   * Run the currently active file
+   */
+  async runActiveFile(): Promise<void> {
+    if (!this.activePane) return;
+
+    const activeTab = this.activePane.getActiveTab();
+    if (!activeTab || activeTab.isPreview) return;
+
+    const filename = activeTab.title;
+    const code = activeTab.model.getValue();
+
+    // Check if file is runnable
+    if (!this.runnerManager.canRun(filename)) {
+      return;
+    }
+
+    // Show/create output pane
+    this.showOutputPane();
+
+    if (!this.outputPane) return;
+
+    // Show loading state
+    this.outputPane.showLoading('Initializing runtime...');
+
+    try {
+      // Run code
+      const result = await this.runnerManager.runFile(filename, code);
+      this.outputPane.showOutput(result);
+    } catch (error) {
+      this.outputPane.showOutput({
+        success: false,
+        output: '',
+        error: `Execution failed: ${error}`
+      });
+    }
+  }
+
+  /**
+   * Show the output pane (create if needed)
+   */
+  private showOutputPane(): void {
+    if (this.outputPane) return;
+
+    // Create split container at bottom (30% height)
+    const parent = this.layoutRoot.parentElement!;
+
+    this.outputSplitContainer = document.createElement('div');
+    this.outputSplitContainer.className = 'split-container split-vertical output-split';
+
+    const topChild = document.createElement('div');
+    topChild.className = 'split-child';
+    topChild.style.flexBasis = '70%';
+
+    const bottomChild = document.createElement('div');
+    bottomChild.className = 'split-child output-pane-container';
+    bottomChild.style.flexBasis = '30%';
+
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer resizer-vertical';
+
+    // Move existing layout root to top
+    parent.replaceChild(this.outputSplitContainer, this.layoutRoot);
+    topChild.appendChild(this.layoutRoot);
+
+    this.outputSplitContainer.appendChild(topChild);
+    this.outputSplitContainer.appendChild(resizer);
+    this.outputSplitContainer.appendChild(bottomChild);
+
+    // Create output pane
+    this.outputPane = new OutputPane(bottomChild, {
+      onClose: () => this.closeOutputPane(),
+      onRerun: () => this.runActiveFile()
+    });
+
+    // Setup resizer
+    this.setupResizer(resizer, this.outputSplitContainer, 'vertical');
+
+    // Re-layout all panes
+    this.panes.forEach(pane => pane.layout());
+  }
+
+  /**
+   * Close the output pane
+   */
+  private closeOutputPane(): void {
+    if (!this.outputPane || !this.outputSplitContainer) return;
+
+    const parent = this.outputSplitContainer.parentElement!;
+
+    // Remove output pane from DOM
+    parent.replaceChild(this.layoutRoot, this.outputSplitContainer);
+
+    this.outputPane = null;
+    this.outputSplitContainer = null;
+
+    // Re-layout all panes
+    this.panes.forEach(pane => pane.layout());
   }
 }
