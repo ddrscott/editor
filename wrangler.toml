@@ -19,6 +19,16 @@ bindings = [
 tag = "v1"
 new_classes = ["SpaceRoom"]
 
+# Migrate to SQLite storage
+[[migrations]]
+tag = "v2"
+renamed_classes = [{ from = "SpaceRoom", to = "SpaceRoomLegacy" }]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["SpaceRoom"]
+deleted_classes = ["SpaceRoomLegacy"]
+
 # Development settings
 [dev]
 port = 8787

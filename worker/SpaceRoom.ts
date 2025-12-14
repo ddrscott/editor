@@ -110,15 +110,75 @@ export class SpaceRoom {
   private sessions: Map<string, Session> = new Map();
   private documentState: DocumentState | null = null;
   private layoutState: LayoutState | null = null;
+  private sql: SqlStorage;
 
   constructor(state: DurableObjectState) {
     this.state = state;
+    this.sql = state.storage.sql;
 
-    // Load persisted state
+    // Initialize SQLite schema and load state
     this.state.blockConcurrencyWhile(async () => {
-      this.documentState = await this.state.storage.get('documentState') || null;
-      this.layoutState = await this.state.storage.get('layoutState') || null;
+      this.initializeSchema();
+      this.loadState();
     });
+  }
+
+  private initializeSchema(): void {
+    // Create tables if they don't exist
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS document_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        active_tab_id TEXT,
+        tab_counter INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS tabs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        hidden INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS layout_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        layout_json TEXT NOT NULL,
+        panes_json TEXT NOT NULL
+      );
+    `);
+  }
+
+  private loadState(): void {
+    // Load document state (use toArray to handle empty results)
+    const docRows = this.sql.exec('SELECT active_tab_id, tab_counter FROM document_state WHERE id = 1').toArray();
+    const docRow = docRows.length > 0 ? docRows[0] : null;
+
+    // Load tabs
+    const tabRows = this.sql.exec('SELECT id, title, content, hidden FROM tabs ORDER BY sort_order').toArray();
+    const tabs = tabRows.map(row => ({
+      id: row.id as string,
+      title: row.title as string,
+      content: row.content as string,
+      hidden: row.hidden === 1,
+    }));
+
+    if (docRow || tabs.length > 0) {
+      this.documentState = {
+        tabs,
+        activeTabId: docRow?.active_tab_id as string | null ?? null,
+        tabCounter: (docRow?.tab_counter as number) ?? 0,
+      };
+    }
+
+    // Load layout state (use toArray to handle empty results)
+    const layoutRows = this.sql.exec('SELECT layout_json, panes_json FROM layout_state WHERE id = 1').toArray();
+    if (layoutRows.length > 0) {
+      const layoutRow = layoutRows[0];
+      this.layoutState = {
+        layout: JSON.parse(layoutRow.layout_json as string),
+        panes: JSON.parse(layoutRow.panes_json as string),
+      };
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -153,10 +213,10 @@ export class SpaceRoom {
     this.sendSync(server, clientId);
 
     // Handle messages
-    server.addEventListener('message', async (event) => {
+    server.addEventListener('message', (event) => {
       try {
         const message = JSON.parse(event.data as string) as ClientMessage;
-        await this.handleMessage(clientId, message);
+        this.handleMessage(clientId, message);
       } catch (error) {
         console.error('Failed to handle message:', error);
       }
@@ -206,7 +266,7 @@ export class SpaceRoom {
     socket.send(JSON.stringify(message));
   }
 
-  private async handleMessage(clientId: string, message: ClientMessage): Promise<void> {
+  private handleMessage(clientId: string, message: ClientMessage): void {
     const session = this.sessions.get(clientId);
     if (!session) return;
 
@@ -220,7 +280,7 @@ export class SpaceRoom {
           if (tab) {
             if (message.content !== undefined) tab.content = message.content;
             if (message.title !== undefined) tab.title = message.title;
-            await this.persistState();
+            this.persistState();
           }
         }
         // Broadcast to all other clients
@@ -237,7 +297,7 @@ export class SpaceRoom {
           title: message.title,
           content: message.content,
         });
-        await this.persistState();
+        this.persistState();
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;
@@ -246,7 +306,7 @@ export class SpaceRoom {
         // Remove tab from document state
         if (this.documentState) {
           this.documentState.tabs = this.documentState.tabs.filter(t => t.id !== message.tabId);
-          await this.persistState();
+          this.persistState();
         }
         // Broadcast to all other clients
         this.broadcast(clientId, message);
@@ -258,7 +318,7 @@ export class SpaceRoom {
           const tab = this.documentState.tabs.find(t => t.id === message.tabId);
           if (tab) {
             tab.hidden = true;
-            await this.persistState();
+            this.persistState();
           }
         }
         // Broadcast to all other clients
@@ -271,7 +331,7 @@ export class SpaceRoom {
           const tab = this.documentState.tabs.find(t => t.id === message.tabId);
           if (tab) {
             tab.hidden = false;
-            await this.persistState();
+            this.persistState();
           }
         }
         // Broadcast to all other clients
@@ -284,7 +344,7 @@ export class SpaceRoom {
           const tab = this.documentState.tabs.find(t => t.id === message.tabId);
           if (tab) {
             tab.title = message.title;
-            await this.persistState();
+            this.persistState();
           }
         }
         // Broadcast to all other clients
@@ -294,7 +354,7 @@ export class SpaceRoom {
       case 'full-sync':
         // Store the full state
         this.documentState = message.state;
-        await this.persistState();
+        this.persistState();
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;
@@ -314,23 +374,71 @@ export class SpaceRoom {
           layout: message.layout,
           panes: message.panes,
         };
-        await this.persistLayout();
+        this.persistLayout();
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;
     }
   }
 
-  private async persistState(): Promise<void> {
-    if (this.documentState) {
-      await this.state.storage.put('documentState', this.documentState);
+  private persistState(): void {
+    if (!this.documentState) return;
+
+    // Upsert document state
+    this.sql.exec(
+      `INSERT INTO document_state (id, active_tab_id, tab_counter)
+       VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         active_tab_id = excluded.active_tab_id,
+         tab_counter = excluded.tab_counter`,
+      this.documentState.activeTabId,
+      this.documentState.tabCounter
+    );
+
+    // Get current tab IDs in database
+    const existingIds = new Set(
+      this.sql.exec('SELECT id FROM tabs').toArray().map(r => r.id as string)
+    );
+    const currentIds = new Set(this.documentState.tabs.map(t => t.id));
+
+    // Delete removed tabs
+    for (const id of existingIds) {
+      if (!currentIds.has(id)) {
+        this.sql.exec('DELETE FROM tabs WHERE id = ?', id);
+      }
     }
+
+    // Upsert tabs
+    this.documentState.tabs.forEach((tab, index) => {
+      this.sql.exec(
+        `INSERT INTO tabs (id, title, content, hidden, sort_order)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title = excluded.title,
+           content = excluded.content,
+           hidden = excluded.hidden,
+           sort_order = excluded.sort_order`,
+        tab.id,
+        tab.title,
+        tab.content,
+        tab.hidden ? 1 : 0,
+        index
+      );
+    });
   }
 
-  private async persistLayout(): Promise<void> {
-    if (this.layoutState) {
-      await this.state.storage.put('layoutState', this.layoutState);
-    }
+  private persistLayout(): void {
+    if (!this.layoutState) return;
+
+    this.sql.exec(
+      `INSERT INTO layout_state (id, layout_json, panes_json)
+       VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         layout_json = excluded.layout_json,
+         panes_json = excluded.panes_json`,
+      JSON.stringify(this.layoutState.layout),
+      JSON.stringify(this.layoutState.panes)
+    );
   }
 
   private broadcast(excludeClientId: string, message: unknown): void {
