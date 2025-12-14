@@ -1,0 +1,253 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background-color: #1e1e1e;
+}
+
+.layout-root {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 100px;
+  min-height: 100px;
+  position: relative;
+}
+
+.tabs {
+  display: flex;
+  background-color: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  min-height: 35px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #2d2d2d;
+  color: #969696;
+  border-right: 1px solid #3c3c3c;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tab:hover {
+  background-color: #323232;
+}
+
+.tab.active {
+  background-color: #1e1e1e;
+  color: #ffffff;
+}
+
+.tab.modified .tab-title::after {
+  content: ' *';
+}
+
+.tab.dragging {
+  opacity: 0.5;
+}
+
+.tab.drag-over-left {
+  box-shadow: inset 3px 0 0 #007acc;
+}
+
+.tab.drag-over-right {
+  box-shadow: inset -3px 0 0 #007acc;
+}
+
+.tab-title {
+  margin-right: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tab-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  color: #969696;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.tab-add:hover {
+  color: #ffffff;
+}
+
+.app-logo {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 10px 16px;
+  color: #5a5a5a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 10px;
+  font-variant: small-caps;
+  letter-spacing: 0.15em;
+  text-decoration: none;
+  user-select: none;
+  z-index: 1000;
+}
+
+.app-logo:hover {
+  color: #808080;
+}
+
+.editor-container {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Split container styles */
+.split-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.split-horizontal {
+  flex-direction: row;
+}
+
+.split-vertical {
+  flex-direction: column;
+}
+
+.split-child {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Resizer styles */
+.resizer {
+  flex-shrink: 0;
+  background-color: #3c3c3c;
+}
+
+.resizer:hover {
+  background-color: #007acc;
+}
+
+.resizer-horizontal {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.resizer-vertical {
+  height: 4px;
+  cursor: row-resize;
+}
+
+/* Drop zones */
+.drop-zones {
+  position: absolute;
+  top: 35px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 100;
+}
+
+.drop-zones.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drop-zone {
+  position: absolute;
+  background-color: rgba(0, 122, 204, 0.3);
+  border: 2px dashed #007acc;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.drop-zone.active {
+  opacity: 1;
+  background-color: rgba(0, 122, 204, 0.5);
+}
+
+.drop-zone-left {
+  left: 0;
+  top: 0;
+  width: 30%;
+  height: 100%;
+}
+
+.drop-zone-right {
+  right: 0;
+  top: 0;
+  width: 30%;
+  height: 100%;
+}
+
+.drop-zone-top {
+  left: 30%;
+  top: 0;
+  width: 40%;
+  height: 30%;
+}
+
+.drop-zone-bottom {
+  left: 30%;
+  bottom: 0;
+  width: 40%;
+  height: 30%;
+}
+
+.drop-zone-center {
+  left: 30%;
+  top: 30%;
+  width: 40%;
+  height: 40%;
+  border-style: solid;
+}

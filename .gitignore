@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Parcel
+.parcel-cache/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
