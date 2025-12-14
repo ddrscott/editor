@@ -1362,18 +1362,18 @@ export class EditorApp {
           this.connectionStatus.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
           this.connectionStatus.innerHTML = `<span class="connection-dot"></span><span>${connected ? 'Connected' : 'Disconnected'}</span>`;
         }
-
-        // Send full state when reconnecting
-        if (connected) {
-          this.sendFullSync();
-        }
+        // Note: Don't send full sync here - wait for server's sync response
       },
       onSync: (state) => {
         // Full state sync from server
         if (state && state.tabs && state.tabs.length > 0) {
+          // Server has state - sync from it (don't overwrite)
           this.isRemoteUpdate = true;
           this.syncFromRemote(state);
           this.isRemoteUpdate = false;
+        } else {
+          // Server has no state - this is a new space, send our state
+          this.sendFullSync();
         }
       },
       onTabUpdate: (tabId, content, title) => {

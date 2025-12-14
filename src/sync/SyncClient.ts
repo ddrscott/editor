@@ -103,7 +103,7 @@ type ClientMessage = TabUpdateMessage | TabCreateMessage | TabCloseMessage | Tab
 
 export interface SyncClientOptions {
   spaceId: string;
-  onSync?: (state: DocumentState) => void;
+  onSync?: (state: DocumentState | null) => void;
   onTabUpdate?: (tabId: string, content: string, title?: string) => void;
   onTabCreate?: (tabId: string, title: string, content: string) => void;
   onTabClose?: (tabId: string) => void;
@@ -226,9 +226,8 @@ export class SyncClient {
         if (message.clientId) {
           this.clientId = message.clientId;
         }
-        if (message.state) {
-          this.onSync?.(message.state);
-        }
+        // Always call onSync so client can decide whether to send its state
+        this.onSync?.(message.state);
         if (message.layout) {
           this.onLayoutUpdate?.(message.layout.layout, message.layout.panes);
         }

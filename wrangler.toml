@@ -3,6 +3,11 @@ main = "worker/index.ts"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Custom domain
+routes = [
+  { pattern = "monaco.ljs.app", custom_domain = true }
+]
+
 # Serve static assets with binding to worker
 [assets]
 directory = "./dist"
@@ -14,20 +19,10 @@ bindings = [
   { name = "SPACE_ROOM", class_name = "SpaceRoom" }
 ]
 
-# Migration for Durable Objects
+# Migration for Durable Objects with SQLite storage
 [[migrations]]
 tag = "v1"
-new_classes = ["SpaceRoom"]
-
-# Migrate to SQLite storage
-[[migrations]]
-tag = "v2"
-renamed_classes = [{ from = "SpaceRoom", to = "SpaceRoomLegacy" }]
-
-[[migrations]]
-tag = "v3"
 new_sqlite_classes = ["SpaceRoom"]
-deleted_classes = ["SpaceRoomLegacy"]
 
 # D1 Database for global space queries
 [[d1_databases]]
