@@ -1,4 +1,5 @@
 import * as monaco from 'monaco-editor';
+import { marked } from 'marked';
 import { SyncClient } from '../sync/SyncClient';
 
 interface TabData {
@@ -7,6 +8,9 @@ interface TabData {
   content: string;
   viewState: monaco.editor.ICodeEditorViewState | null;
   hidden?: boolean;
+  // Preview tab metadata
+  isPreview?: boolean;
+  sourceTabId?: string;
 }
 
 interface PaneData {
@@ -21,12 +25,6 @@ interface SplitData {
   children?: SplitData[];
   paneId?: string;
   sizes?: number[];
-}
-
-interface StoredState {
-  layout: SplitData;
-  panes: PaneData[];
-  tabCounter: number;
 }
 
 interface EditorSettingsData {
@@ -256,69 +254,16 @@ function registerEditorActions(settings: EditorSettings): void {
   });
 }
 
-class EditorStorage {
-  private db: IDBDatabase | null = null;
-  private readonly DB_NAME: string;
-  private readonly STORE_NAME = 'editor-state';
-  private readonly STATE_KEY = 'state';
-
-  constructor(spaceId?: string) {
-    // Use space-specific database if spaceId provided
-    this.DB_NAME = spaceId ? `monaco-space-${spaceId}` : 'monaco-editor-db';
-  }
-
-  async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.DB_NAME, 2);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-          db.createObjectStore(this.STORE_NAME);
-        }
-      };
-    });
-  }
-
-  async save(state: StoredState): Promise<void> {
-    if (!this.db) return;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(this.STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(this.STORE_NAME);
-      const request = store.put(state, this.STATE_KEY);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
-  }
-
-  async load(): Promise<StoredState | null> {
-    if (!this.db) return null;
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(this.STORE_NAME, 'readonly');
-      const store = transaction.objectStore(this.STORE_NAME);
-      const request = store.get(this.STATE_KEY);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result || null);
-    });
-  }
-}
-
 interface Tab {
   id: string;
   title: string;
   model: monaco.editor.ITextModel;
   viewState: monaco.editor.ICodeEditorViewState | null;
   hidden?: boolean;
+  // Preview tab properties
+  isPreview?: boolean;
+  sourceTabId?: string;
+  previewContent?: string;
 }
 
 type SplitDirection = 'left' | 'right' | 'top' | 'bottom';
@@ -339,6 +284,7 @@ class Pane {
   private activeTabId: string | null = null;
   private tabsContainer: HTMLElement;
   private editorContainer: HTMLElement;
+  private previewContainer: HTMLElement;
   private dropZones: HTMLElement;
   private app: EditorApp;
   private draggedTabId: string | null = null;
@@ -368,6 +314,10 @@ class Pane {
     this.editorContainer = document.createElement('div');
     this.editorContainer.className = 'editor-container';
 
+    this.previewContainer = document.createElement('div');
+    this.previewContainer.className = 'preview-container';
+    this.previewContainer.style.display = 'none';
+
     this.dropZones = document.createElement('div');
     this.dropZones.className = 'drop-zones';
     this.dropZones.innerHTML = `
@@ -380,13 +330,14 @@ class Pane {
 
     this.element.appendChild(this.tabsContainer);
     this.element.appendChild(this.editorContainer);
+    this.element.appendChild(this.previewContainer);
     this.element.appendChild(this.dropZones);
 
     const settings = this.app.getSettings();
     this.editor = monaco.editor.create(this.editorContainer, {
       theme: settings.get('theme'),
       automaticLayout: true,
-      scrollBeyondLastLine: false,
+      scrollBeyondLastLine: true,
       ...settings.getMonacoOptions(),
     });
 
@@ -789,6 +740,7 @@ class Pane {
     tabElement.appendChild(titleSpan);
     tabElement.appendChild(closeButton);
     tabElement.addEventListener('click', () => this.activateTab(tab.id));
+    tabElement.addEventListener('contextmenu', (e) => this.showTabContextMenu(e, tab));
 
     const addButton = this.tabsContainer.querySelector('.tab-add');
     this.tabsContainer.insertBefore(tabElement, addButton);
@@ -825,19 +777,29 @@ class Pane {
 
     if (this.activeTabId) {
       const currentTab = this.tabs.find(t => t.id === this.activeTabId);
-      if (currentTab) {
+      if (currentTab && !currentTab.isPreview) {
         currentTab.viewState = this.editor.saveViewState();
       }
     }
 
     this.activeTabId = tabId;
-    this.editor.setModel(tab.model);
 
-    if (tab.viewState) {
-      this.editor.restoreViewState(tab.viewState);
+    // Handle preview tabs differently
+    if (tab.isPreview) {
+      this.editorContainer.style.display = 'none';
+      this.previewContainer.style.display = 'flex';
+      this.previewContainer.innerHTML = tab.previewContent || '';
+    } else {
+      this.previewContainer.style.display = 'none';
+      this.editorContainer.style.display = 'flex';
+      this.editor.setModel(tab.model);
+
+      if (tab.viewState) {
+        this.editor.restoreViewState(tab.viewState);
+      }
+
+      this.editor.focus();
     }
-
-    this.editor.focus();
 
     this.tabsContainer.querySelectorAll('.tab').forEach(el => {
       el.classList.toggle('active', el.dataset.tabId === tabId);
@@ -960,6 +922,97 @@ class Pane {
     }
 
     document.body.appendChild(menu);
+
+    // Close menu when clicking outside
+    const closeMenu = (event: MouseEvent) => {
+      if (!menu.contains(event.target as Node)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  }
+
+  private showTabContextMenu(e: MouseEvent, tab: Tab): void {
+    e.preventDefault();
+
+    // Remove any existing context menu
+    const existingMenu = document.querySelector('.tab-context-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+
+    // Create menu
+    const menu = document.createElement('div');
+    menu.className = 'tab-context-menu';
+    menu.style.cssText = `
+      position: fixed;
+      left: ${e.clientX}px;
+      top: ${e.clientY}px;
+      background: #252526;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      padding: 4px 0;
+      min-width: 160px;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    `;
+
+    const createMenuItem = (label: string, onClick: () => void, enabled = true) => {
+      const item = document.createElement('div');
+      item.style.cssText = `padding: 6px 12px; cursor: ${enabled ? 'pointer' : 'default'}; color: ${enabled ? '#cccccc' : '#666666'}; font-size: 13px;`;
+      item.textContent = label;
+      if (enabled) {
+        item.addEventListener('mouseenter', () => {
+          item.style.backgroundColor = '#094771';
+        });
+        item.addEventListener('mouseleave', () => {
+          item.style.backgroundColor = '';
+        });
+        item.addEventListener('click', () => {
+          onClick();
+          menu.remove();
+        });
+      }
+      return item;
+    };
+
+    const addSeparator = () => {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'height: 1px; background: #3c3c3c; margin: 4px 0;';
+      menu.appendChild(sep);
+    };
+
+    // Check if markdown file
+    const isMarkdown = tab.title.toLowerCase().endsWith('.md') ||
+                       tab.title.toLowerCase().endsWith('.markdown');
+
+    // Check if preview is currently open for this tab
+    const hasPreviewOpen = this.app.isPreviewOpenForTab(tab.id);
+
+    // Preview option (for markdown files)
+    if (isMarkdown) {
+      menu.appendChild(createMenuItem(
+        hasPreviewOpen ? 'Close Preview' : 'Open Preview',
+        () => this.app.toggleMarkdownPreview()
+      ));
+      addSeparator();
+    }
+
+    // Standard tab actions
+    menu.appendChild(createMenuItem('Rename', () => this.renameTab(tab.id)));
+    menu.appendChild(createMenuItem('Close', () => this.closeTab(tab.id)));
+
+    document.body.appendChild(menu);
+
+    // Keep menu within viewport
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+      menu.style.left = `${window.innerWidth - rect.width - 5}px`;
+    }
+    if (rect.bottom > window.innerHeight) {
+      menu.style.top = `${window.innerHeight - rect.height - 5}px`;
+    }
 
     // Close menu when clicking outside
     const closeMenu = (event: MouseEvent) => {
@@ -1117,6 +1170,21 @@ class Pane {
     return this.tabs;
   }
 
+  findPreviewTabForSource(sourceTabId: string): Tab | null {
+    return this.tabs.find(t => t.isPreview && t.sourceTabId === sourceTabId) || null;
+  }
+
+  updatePreviewContent(tabId: string, content: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (tab && tab.isPreview) {
+      tab.previewContent = content;
+      // If this preview is currently active, update the display
+      if (this.activeTabId === tabId) {
+        this.previewContainer.innerHTML = content;
+      }
+    }
+  }
+
   getActiveTabId(): string | null {
     return this.activeTabId;
   }
@@ -1167,7 +1235,6 @@ export class EditorApp {
   private container: HTMLElement;
   private panes: Map<string, Pane> = new Map();
   private activePane: Pane | null = null;
-  private storage: EditorStorage;
   private settings: EditorSettings;
   private saveTimeout: ReturnType<typeof setTimeout> | null = null;
   private tabCounter = 0;
@@ -1192,7 +1259,6 @@ export class EditorApp {
     this.container = container;
     this.spaceId = spaceId || null;
     this.container.innerHTML = '';
-    this.storage = new EditorStorage(spaceId);
     this.settings = new EditorSettings();
 
     // Apply initial theme
@@ -1331,25 +1397,24 @@ export class EditorApp {
     window.addEventListener('beforeunload', this.beforeUnloadHandler);
   }
 
-  private async init(): Promise<void> {
-    await this.storage.init();
-    const state = await this.storage.load();
-
-    if (state && state.panes && state.panes.length > 0 && state.layout) {
-      this.tabCounter = state.tabCounter;
-      this.restoreLayout(state);
-    } else {
-      const pane = new Pane(this);
-      this.panes.set(pane.id, pane);
-      this.layoutRoot.appendChild(pane.element);
-      this.activePane = pane;
-      this.createNewTab(pane);
-    }
-
-    // Initialize sync client for collaborative spaces
+  private init(): void {
+    // All spaces should go through /new which creates server-side state
+    // Show loading and connect to sync
     if (this.spaceId) {
+      this.layoutRoot.innerHTML = '<div class="loading-state">Connecting to space...</div>';
       this.initSync();
+    } else {
+      // No spaceId - redirect to create a new space
+      window.location.href = '/new';
     }
+  }
+
+  private createDefaultPane(): void {
+    const pane = new Pane(this);
+    this.panes.set(pane.id, pane);
+    this.layoutRoot.appendChild(pane.element);
+    this.activePane = pane;
+    this.createNewTab(pane);
   }
 
   private initSync(): void {
@@ -1365,15 +1430,19 @@ export class EditorApp {
         // Note: Don't send full sync here - wait for server's sync response
       },
       onSync: (state) => {
-        // Full state sync from server
+        // Clear loading state
+        this.layoutRoot.innerHTML = '';
+
+        // Full state sync from server - Durable Object is the single source of truth
+        // Client NEVER pushes initial state - server creates default state via /new
         if (state && state.tabs && state.tabs.length > 0) {
-          // Server has state - sync from it (don't overwrite)
           this.isRemoteUpdate = true;
-          this.syncFromRemote(state);
+          this.initializeFromServerState(state);
           this.isRemoteUpdate = false;
         } else {
-          // Server has no state - this is a new space, send our state
-          this.sendFullSync();
+          // Server has no state - this shouldn't happen with proper /new flow
+          // Show error and suggest creating via /new
+          this.layoutRoot.innerHTML = '<div class="loading-state">Space not found. <a href="/new">Create a new space</a></div>';
         }
       },
       onTabUpdate: (tabId, content, title) => {
@@ -1381,9 +1450,9 @@ export class EditorApp {
         this.handleRemoteTabUpdate(tabId, content, title);
         this.isRemoteUpdate = false;
       },
-      onTabCreate: (tabId, title, content) => {
+      onTabCreate: (tabId, title, content, isPreview, sourceTabId) => {
         this.isRemoteUpdate = true;
-        this.handleRemoteTabCreate(tabId, title, content);
+        this.handleRemoteTabCreate(tabId, title, content, isPreview, sourceTabId);
         this.isRemoteUpdate = false;
       },
       onTabClose: (tabId) => {
@@ -1420,13 +1489,15 @@ export class EditorApp {
   private sendFullSync(): void {
     if (!this.syncClient || !this.activePane) return;
 
-    const tabs: Array<{ id: string; title: string; content: string }> = [];
+    const tabs: Array<{ id: string; title: string; content: string; hidden?: boolean; isPreview?: boolean; sourceTabId?: string }> = [];
     this.panes.forEach(pane => {
       pane.getTabs().forEach(tab => {
         tabs.push({
           id: tab.id,
           title: tab.title,
-          content: tab.model.getValue(),
+          content: tab.isPreview ? '' : tab.model.getValue(),
+          isPreview: tab.isPreview,
+          sourceTabId: tab.sourceTabId,
         });
       });
     });
@@ -1436,6 +1507,80 @@ export class EditorApp {
       activeTabId: this.activePane.getActiveTabId(),
       tabCounter: this.tabCounter,
     });
+  }
+
+  private initializeFromServerState(state: {
+    tabs: Array<{ id: string; title: string; content: string; hidden?: boolean; isPreview?: boolean; sourceTabId?: string }>;
+    activeTabId: string | null;
+    tabCounter: number;
+  }): void {
+    // Clear any existing state
+    this.panes.forEach(pane => pane.dispose());
+    this.panes.clear();
+
+    // Create default pane
+    const pane = new Pane(this);
+    this.panes.set(pane.id, pane);
+    this.layoutRoot.appendChild(pane.element);
+    this.activePane = pane;
+
+    // Set tab counter from server
+    this.tabCounter = state.tabCounter;
+
+    // Create tabs from server state (non-preview first, then previews)
+    const regularTabs = state.tabs.filter(t => !t.isPreview && !t.hidden);
+    const previewTabs = state.tabs.filter(t => t.isPreview && !t.hidden);
+
+    for (const remoteTab of regularTabs) {
+      const language = this.getLanguageFromTitle(remoteTab.title);
+      const model = monaco.editor.createModel(remoteTab.content, language);
+      const tab: Tab = {
+        id: remoteTab.id,
+        title: remoteTab.title,
+        model,
+        viewState: null,
+      };
+      this.setupTabSync(tab, pane);
+      pane.addTab(tab, false);
+    }
+
+    // Create preview tabs (after regular tabs so sources exist)
+    for (const remoteTab of previewTabs) {
+      const dummyModel = monaco.editor.createModel('', 'plaintext');
+      const sourceTab = this.findTabById(remoteTab.sourceTabId!);
+      const previewContent = sourceTab
+        ? this.renderMarkdownPreview(sourceTab.model.getValue())
+        : '<div class="markdown-preview-content"><p class="empty-preview">Source not found</p></div>';
+
+      const tab: Tab = {
+        id: remoteTab.id,
+        title: remoteTab.title,
+        model: dummyModel,
+        viewState: null,
+        isPreview: true,
+        sourceTabId: remoteTab.sourceTabId,
+        previewContent,
+      };
+      pane.addTab(tab, false);
+
+      // Set up live preview sync
+      if (sourceTab) {
+        this.setupPreviewSync(sourceTab, tab.id);
+      }
+    }
+
+    // Activate the correct tab
+    if (state.activeTabId) {
+      pane.activateTab(state.activeTabId);
+    } else if (pane.getTabs().length > 0) {
+      pane.activateTab(pane.getTabs()[0].id);
+    }
+
+    // Update page title
+    const activeTab = pane.getActiveTab();
+    if (activeTab) {
+      this.updatePageTitle(activeTab.title);
+    }
   }
 
   private syncFromRemote(state: { tabs: Array<{ id: string; title: string; content: string }>; activeTabId: string | null; tabCounter: number }): void {
@@ -1493,23 +1638,53 @@ export class EditorApp {
     }
   }
 
-  private handleRemoteTabCreate(tabId: string, title: string, content: string): void {
+  private handleRemoteTabCreate(tabId: string, title: string, content: string, isPreview?: boolean, sourceTabId?: string): void {
     // Add to first pane
     const pane = this.panes.values().next().value as Pane | undefined;
     if (!pane) return;
 
-    // Check if tab already exists
-    if (pane.getTabs().find(t => t.id === tabId)) return;
+    // Check if tab already exists in any pane
+    for (const p of this.panes.values()) {
+      if (p.getTabs().find(t => t.id === tabId)) return;
+    }
 
-    const language = this.getLanguageFromTitle(title);
-    const model = monaco.editor.createModel(content, language);
-    const tab: Tab = {
-      id: tabId,
-      title,
-      model,
-      viewState: null,
-    };
-    this.setupTabSync(tab, pane);
+    let tab: Tab;
+
+    if (isPreview && sourceTabId) {
+      // Create preview tab
+      const sourceTab = this.findTabById(sourceTabId);
+      const previewContent = sourceTab
+        ? this.renderMarkdownPreview(sourceTab.model.getValue())
+        : '<div class="markdown-preview-content"><p>Source not found</p></div>';
+
+      const dummyModel = monaco.editor.createModel('', 'plaintext');
+      tab = {
+        id: tabId,
+        title,
+        model: dummyModel,
+        viewState: null,
+        isPreview: true,
+        sourceTabId,
+        previewContent,
+      };
+
+      // Set up preview sync if source exists
+      if (sourceTab) {
+        this.setupPreviewSync(sourceTab, tab);
+      }
+    } else {
+      // Create regular tab
+      const language = this.getLanguageFromTitle(title);
+      const model = monaco.editor.createModel(content, language);
+      tab = {
+        id: tabId,
+        title,
+        model,
+        viewState: null,
+      };
+      this.setupTabSync(tab, pane);
+    }
+
     pane.addTab(tab, false);
   }
 
@@ -1591,8 +1766,10 @@ export class EditorApp {
             return {
               id: tab.id,
               title: tab.title,
-              content: tab.model.getValue(),
+              content: tab.isPreview ? '' : tab.model.getValue(),
               viewState: null,
+              isPreview: tab.isPreview,
+              sourceTabId: tab.sourceTabId,
             };
           }
           return { id: tabId, title: 'Untitled', content: '', viewState: null };
@@ -1603,6 +1780,9 @@ export class EditorApp {
 
     // Restore layout from remote data
     this.restoreLayoutNode(layout, this.layoutRoot, paneDataMap);
+
+    // Fix up preview tabs after all tabs are restored
+    this.fixupRestoredPreviewTabs();
 
     // Set active pane
     if (this.panes.size > 0) {
@@ -1631,17 +1811,20 @@ export class EditorApp {
   }
 
   private serializeLayoutForSync(element: HTMLElement): SplitData {
-    // Similar to serializeLayout but without sizes
     const splitContainer = element.querySelector(':scope > .split-container');
     if (splitContainer) {
       const isHorizontal = splitContainer.classList.contains('split-horizontal');
       const children = Array.from(splitContainer.querySelectorAll(':scope > .split-child')) as HTMLElement[];
+      const sizes = children.map(child => {
+        const basis = child.style.flexBasis;
+        return parseFloat(basis) || 50;
+      });
 
       return {
         type: 'split',
         direction: isHorizontal ? 'horizontal' : 'vertical',
         children: children.map(child => this.serializeLayoutForSync(child)),
-        // No sizes - each client sizes locally
+        sizes,
       };
     }
 
@@ -1671,23 +1854,6 @@ export class EditorApp {
         this.syncClient.sendTabUpdate(tab.id, tab.model.getValue(), tab.title);
       }
     });
-  }
-
-  private restoreLayout(state: StoredState): void {
-    const paneDataMap = new Map(state.panes.map(p => [p.id, p]));
-    this.restoreLayoutNode(state.layout, this.layoutRoot, paneDataMap);
-
-    if (this.panes.size > 0) {
-      this.activePane = this.panes.values().next().value;
-
-      // Update page title with active tab
-      if (this.activePane) {
-        const activeTab = this.activePane.getActiveTab();
-        if (activeTab) {
-          this.updatePageTitle(activeTab.title);
-        }
-      }
-    }
   }
 
   private restoreLayoutNode(
@@ -1780,12 +1946,37 @@ export class EditorApp {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       this.scheduleSave();
+      this.sendLayoutUpdate();
     };
 
     resizer.addEventListener('mousedown', onMouseDown);
   }
 
   private createTabFromData(data: TabData, pane?: Pane): Tab {
+    // Handle preview tabs
+    if (data.isPreview && data.sourceTabId) {
+      // Create dummy model for preview tab (won't be used)
+      const dummyModel = monaco.editor.createModel('', 'plaintext');
+
+      // Try to find source tab and regenerate content
+      // Note: source may not exist yet during restore, will be fixed up later
+      const sourceTab = this.findTabById(data.sourceTabId);
+      const previewContent = sourceTab
+        ? this.renderMarkdownPreview(sourceTab.model.getValue())
+        : '<div class="markdown-preview-content"><p class="empty-preview">Loading preview...</p></div>';
+
+      return {
+        id: data.id,
+        title: data.title,
+        model: dummyModel,
+        viewState: null,
+        isPreview: true,
+        sourceTabId: data.sourceTabId,
+        previewContent,
+      };
+    }
+
+    // Regular tab
     const language = this.getLanguageFromTitle(data.title);
     const model = monaco.editor.createModel(data.content, language);
 
@@ -2028,33 +2219,10 @@ export class EditorApp {
     this.saveTimeout = setTimeout(() => this.saveState(), 500);
   }
 
-  async saveState(): Promise<void> {
+  saveState(): void {
+    // Save view state and clear modified flags
+    // Actual state sync happens via SyncClient on content changes
     this.panes.forEach(pane => pane.saveViewState());
-
-    const panes: PaneData[] = [];
-    this.panes.forEach(pane => {
-      panes.push({
-        id: pane.id,
-        tabs: pane.getTabs().map(tab => ({
-          id: tab.id,
-          title: tab.title,
-          content: tab.model.getValue(),
-          viewState: tab.viewState,
-        })),
-        activeTabId: pane.getActiveTabId(),
-      });
-    });
-
-    const layout = this.serializeLayout(this.layoutRoot);
-
-    const state: StoredState = {
-      layout,
-      panes,
-      tabCounter: this.tabCounter,
-    };
-
-    await this.storage.save(state);
-
     this.panes.forEach(pane => pane.clearAllModified());
   }
 
@@ -2201,5 +2369,172 @@ export class EditorApp {
 
     // Update known clients
     this.knownClients = currentClientIds;
+  }
+
+  isPreviewOpenForTab(tabId: string): boolean {
+    // Check all panes for a preview tab linked to this source
+    for (const pane of this.panes.values()) {
+      if (pane.findPreviewTabForSource(tabId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  toggleMarkdownPreview(): void {
+    if (!this.activePane) return;
+
+    const activeTab = this.activePane.getActiveTab();
+    if (!activeTab) return;
+
+    // Check if preview already exists for this tab
+    const existingPreviewPane = this.findPreviewPaneForSource(activeTab.id);
+    if (existingPreviewPane) {
+      // Close the preview by finding and closing the preview tab
+      const previewTab = existingPreviewPane.pane.findPreviewTabForSource(activeTab.id);
+      if (previewTab) {
+        existingPreviewPane.pane.closeTab(previewTab.id);
+      }
+      return;
+    }
+
+    // Create a preview tab in a new split pane to the right
+    const previewTabId = `preview-${activeTab.id}`;
+    const previewTitle = `Preview: ${activeTab.title}`;
+
+    // Parse markdown content
+    const previewContent = this.renderMarkdownPreview(activeTab.model.getValue());
+
+    // Create a dummy model for the preview tab (won't be used but needed for interface)
+    const dummyModel = monaco.editor.createModel('', 'plaintext');
+
+    const previewTab: Tab = {
+      id: previewTabId,
+      title: previewTitle,
+      model: dummyModel,
+      viewState: null,
+      isPreview: true,
+      sourceTabId: activeTab.id,
+      previewContent,
+    };
+
+    // Split to create a new pane on the right
+    this.splitPaneWithPreview(this.activePane, 'right', previewTab);
+
+    // Set up live sync from source to preview
+    this.setupPreviewSync(activeTab, previewTabId);
+  }
+
+  private findPreviewPaneForSource(sourceTabId: string): { pane: Pane; tab: Tab } | null {
+    for (const pane of this.panes.values()) {
+      const previewTab = pane.findPreviewTabForSource(sourceTabId);
+      if (previewTab) {
+        return { pane, tab: previewTab };
+      }
+    }
+    return null;
+  }
+
+  private findTabById(tabId: string): Tab | null {
+    for (const pane of this.panes.values()) {
+      const tab = pane.getTabs().find(t => t.id === tabId);
+      if (tab) return tab;
+    }
+    return null;
+  }
+
+  private splitPaneWithPreview(sourcePane: Pane, direction: 'right', previewTab: Tab): void {
+    const parent = sourcePane.element.parentElement!;
+
+    const splitContainer = document.createElement('div');
+    splitContainer.className = 'split-container split-horizontal';
+
+    const existingWrapper = document.createElement('div');
+    existingWrapper.className = 'split-child';
+    existingWrapper.style.flexBasis = '50%';
+
+    const newWrapper = document.createElement('div');
+    newWrapper.className = 'split-child';
+    newWrapper.style.flexBasis = '50%';
+
+    const newPane = new Pane(this);
+    this.panes.set(newPane.id, newPane);
+    newPane.addTab(previewTab);
+
+    // Sync preview tab creation to server
+    if (this.syncClient && !this.isRemoteUpdate) {
+      this.syncClient.sendTabCreate(
+        previewTab.id,
+        previewTab.title,
+        '', // Preview tabs don't have content - it's derived from source
+        previewTab.isPreview,
+        previewTab.sourceTabId
+      );
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer resizer-horizontal';
+    this.setupResizer(resizer, splitContainer, 'horizontal');
+
+    parent.replaceChild(splitContainer, sourcePane.element);
+
+    existingWrapper.appendChild(sourcePane.element);
+    newWrapper.appendChild(newPane.element);
+    splitContainer.appendChild(existingWrapper);
+    splitContainer.appendChild(resizer);
+    splitContainer.appendChild(newWrapper);
+
+    this.panes.forEach(pane => pane.layout());
+    this.scheduleSave();
+  }
+
+  private setupPreviewSync(sourceTab: Tab, previewTabId: string): void {
+    // Store the disposable so we can clean it up
+    const disposable = sourceTab.model.onDidChangeContent(() => {
+      const previewInfo = this.findPreviewPaneForSource(sourceTab.id);
+      if (previewInfo) {
+        const content = this.renderMarkdownPreview(sourceTab.model.getValue());
+        previewInfo.pane.updatePreviewContent(previewTabId, content);
+      }
+    });
+
+    // Store disposable on the preview tab's model (will be cleaned up when tab closes)
+    // We attach it to the dummy model's dispose
+    const originalDispose = sourceTab.model.onWillDispose(() => {
+      disposable.dispose();
+      originalDispose.dispose();
+    });
+  }
+
+  private fixupRestoredPreviewTabs(): void {
+    // After restore, update preview content and set up sync for any preview tabs
+    for (const pane of this.panes.values()) {
+      for (const tab of pane.getTabs()) {
+        if (tab.isPreview && tab.sourceTabId) {
+          const sourceTab = this.findTabById(tab.sourceTabId);
+          if (sourceTab) {
+            // Regenerate preview content from source
+            tab.previewContent = this.renderMarkdownPreview(sourceTab.model.getValue());
+            pane.updatePreviewContent(tab.id, tab.previewContent);
+
+            // Set up live sync
+            this.setupPreviewSync(sourceTab, tab.id);
+          }
+        }
+      }
+    }
+  }
+
+  private renderMarkdownPreview(markdown: string): string {
+    if (!markdown || !markdown.trim()) {
+      return '<div class="markdown-preview-content"><p class="empty-preview">Start typing to see preview...</p></div>';
+    }
+
+    const html = marked.parse(markdown, {
+      gfm: true,        // GitHub Flavored Markdown
+      breaks: false,    // Don't convert \n to <br>
+    });
+
+    return `<div class="markdown-preview-content">${html}</div>`;
   }
 }

@@ -17,8 +17,9 @@
     "wrangler": "^4.51.0"
   },
   "dependencies": {
+    "marked": "^17.0.1",
     "monaco-editor": "^0.52.0",
-    "yjs": "^13.6.0",
-    "y-monaco": "^0.1.6"
+    "y-monaco": "^0.1.6",
+    "yjs": "^13.6.0"
   }
 }

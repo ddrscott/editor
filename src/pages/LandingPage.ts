@@ -73,17 +73,8 @@ export class LandingPage {
       btn.textContent = 'Creating...';
     }
 
-    try {
-      // For now, generate UUID client-side (will be server-side later)
-      const uuid = crypto.randomUUID();
-      this.router.navigate(`/space/${uuid}`);
-    } catch (error) {
-      console.error('Failed to create space:', error);
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Create New Space';
-      }
-    }
+    // Server creates space with default state and redirects to /space/{id}
+    window.location.href = '/new';
   }
 
   destroy(): void {

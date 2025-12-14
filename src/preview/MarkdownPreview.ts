@@ -1,82 +1,48 @@
-// Simple Markdown parser without external dependencies
-// For production, consider using marked or remark with WASM
-
-interface MarkdownOptions {
-  onEdit?: (content: string) => void;
-}
+// Side-by-side Markdown Preview component
+// Renders markdown and stays synced with source editor
 
 export class MarkdownPreview {
   private container: HTMLElement;
-  private content: string = '';
-  private isEditing = false;
-  private onEdit?: (content: string) => void;
+  private contentEl: HTMLElement;
+  private sourceTabId: string;
+  private onClose?: () => void;
 
-  constructor(container: HTMLElement, options?: MarkdownOptions) {
+  constructor(container: HTMLElement, sourceTabId: string, onClose?: () => void) {
     this.container = container;
-    this.onEdit = options?.onEdit;
-    this.container.className = 'markdown-preview';
+    this.sourceTabId = sourceTabId;
+    this.onClose = onClose;
+    this.container.className = 'markdown-preview-pane';
     this.render();
+    this.contentEl = this.container.querySelector('.markdown-content')!;
   }
 
-  setContent(markdown: string): void {
-    this.content = markdown;
-    if (!this.isEditing) {
-      this.render();
-    }
+  getSourceTabId(): string {
+    return this.sourceTabId;
   }
 
   private render(): void {
-    const html = this.parseMarkdown(this.content);
     this.container.innerHTML = `
-      <div class="markdown-content" tabindex="0">
-        ${html}
+      <div class="preview-header">
+        <span class="preview-title">Preview</span>
+        <button class="preview-close" title="Close Preview">&times;</button>
       </div>
-      <button class="preview-edit-btn" title="Edit Markdown">Edit</button>
+      <div class="markdown-content"></div>
     `;
 
-    const editBtn = this.container.querySelector('.preview-edit-btn');
-    editBtn?.addEventListener('click', () => this.enterEditMode());
-
-    // Make content double-clickable to edit
-    const contentEl = this.container.querySelector('.markdown-content');
-    contentEl?.addEventListener('dblclick', () => this.enterEditMode());
+    const closeBtn = this.container.querySelector('.preview-close');
+    closeBtn?.addEventListener('click', () => this.onClose?.());
   }
 
-  private enterEditMode(): void {
-    this.isEditing = true;
-    this.container.innerHTML = `
-      <textarea class="markdown-editor">${this.escapeHtml(this.content)}</textarea>
-      <button class="preview-done-btn" title="Done Editing">Done</button>
-    `;
-
-    const textarea = this.container.querySelector('.markdown-editor') as HTMLTextAreaElement;
-    const doneBtn = this.container.querySelector('.preview-done-btn');
-
-    textarea?.focus();
-    textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
-
-    doneBtn?.addEventListener('click', () => this.exitEditMode());
-
-    // Also exit on Escape
-    textarea?.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.exitEditMode();
-      }
-    });
-  }
-
-  private exitEditMode(): void {
-    const textarea = this.container.querySelector('.markdown-editor') as HTMLTextAreaElement;
-    if (textarea) {
-      this.content = textarea.value;
-      this.onEdit?.(this.content);
+  update(markdown: string): void {
+    if (this.contentEl) {
+      this.contentEl.innerHTML = this.parseMarkdown(markdown);
     }
-    this.isEditing = false;
-    this.render();
   }
 
   private parseMarkdown(md: string): string {
-    if (!md) return '<p class="empty-preview">No content</p>';
+    if (!md || !md.trim()) {
+      return '<p class="empty-preview">Start typing to see preview...</p>';
+    }
 
     let html = this.escapeHtml(md);
 
@@ -113,8 +79,9 @@ export class MarkdownPreview {
     // Images
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />');
 
-    // Blockquotes
+    // Blockquotes (handle multi-line)
     html = html.replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>');
+    html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
 
     // Horizontal rules
     html = html.replace(/^---$/gm, '<hr />');
@@ -124,7 +91,6 @@ export class MarkdownPreview {
     html = html.replace(/^[\*\-]\s+(.+)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>.*<\/li>)\n(<li>)/g, '$1$2');
     html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
-    // Clean up nested uls
     html = html.replace(/<\/ul>\s*<ul>/g, '');
 
     // Ordered lists
@@ -141,7 +107,7 @@ export class MarkdownPreview {
     // Clean up empty paragraphs
     html = html.replace(/<p><\/p>/g, '');
 
-    // Line breaks
+    // Line breaks between elements
     html = html.replace(/\n\n+/g, '\n');
 
     return html;
@@ -154,6 +120,6 @@ export class MarkdownPreview {
   }
 
   destroy(): void {
-    this.container.innerHTML = '';
+    this.container.remove();
   }
 }

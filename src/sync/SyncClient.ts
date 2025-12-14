@@ -37,6 +37,8 @@ interface TabCreateMessage {
   tabId: string;
   title: string;
   content: string;
+  isPreview?: boolean;
+  sourceTabId?: string;
 }
 
 interface TabCloseMessage {
@@ -81,7 +83,7 @@ interface LayoutSplitData {
   direction?: 'horizontal' | 'vertical';
   children?: LayoutSplitData[];
   paneId?: string;
-  // Note: sizes are intentionally omitted - each client sizes locally
+  sizes?: number[];
 }
 
 interface PaneState {
@@ -91,7 +93,14 @@ interface PaneState {
 }
 
 interface DocumentState {
-  tabs: Array<{ id: string; title: string; content: string; hidden?: boolean }>;
+  tabs: Array<{
+    id: string;
+    title: string;
+    content: string;
+    hidden?: boolean;
+    isPreview?: boolean;
+    sourceTabId?: string;
+  }>;
   activeTabId: string | null;
   tabCounter: number;
   layout?: LayoutSplitData;
@@ -105,7 +114,7 @@ export interface SyncClientOptions {
   spaceId: string;
   onSync?: (state: DocumentState | null) => void;
   onTabUpdate?: (tabId: string, content: string, title?: string) => void;
-  onTabCreate?: (tabId: string, title: string, content: string) => void;
+  onTabCreate?: (tabId: string, title: string, content: string, isPreview?: boolean, sourceTabId?: string) => void;
   onTabClose?: (tabId: string) => void;
   onTabHide?: (tabId: string) => void;
   onTabRestore?: (tabId: string) => void;
@@ -124,7 +133,7 @@ export class SyncClient {
   private connected = false;
   private onSync?: (state: DocumentState) => void;
   private onTabUpdate?: (tabId: string, content: string, title?: string) => void;
-  private onTabCreate?: (tabId: string, title: string, content: string) => void;
+  private onTabCreate?: (tabId: string, title: string, content: string, isPreview?: boolean, sourceTabId?: string) => void;
   private onTabClose?: (tabId: string) => void;
   private onTabHide?: (tabId: string) => void;
   private onTabRestore?: (tabId: string) => void;
@@ -247,7 +256,7 @@ export class SyncClient {
         break;
 
       case 'tab-create':
-        this.onTabCreate?.(message.tabId, message.title, message.content);
+        this.onTabCreate?.(message.tabId, message.title, message.content, message.isPreview, message.sourceTabId);
         break;
 
       case 'tab-close':
@@ -285,12 +294,14 @@ export class SyncClient {
     });
   }
 
-  sendTabCreate(tabId: string, title: string, content: string): void {
+  sendTabCreate(tabId: string, title: string, content: string, isPreview?: boolean, sourceTabId?: string): void {
     this.send({
       type: 'tab-create',
       tabId,
       title,
       content,
+      isPreview,
+      sourceTabId,
     });
   }
 

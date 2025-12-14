@@ -13,6 +13,24 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Create new space - server generates ID and initializes Durable Object
+    if (path === '/new') {
+      const spaceId = crypto.randomUUID();
+
+      // Initialize the Durable Object with default state
+      const id = env.SPACE_ROOM.idFromName(spaceId);
+      const room = env.SPACE_ROOM.get(id);
+
+      // Call init endpoint to ensure DO is created with default state
+      await room.fetch(new Request('https://internal/init', { method: 'POST' }));
+
+      // Track the new space
+      await trackSpaceRead(env.DB, spaceId);
+
+      // Redirect to the new space
+      return Response.redirect(`${url.origin}/space/${spaceId}`, 302);
+    }
+
     // WebSocket upgrade for space collaboration
     if (path.startsWith('/ws/space/')) {
       const spaceId = path.replace('/ws/space/', '');

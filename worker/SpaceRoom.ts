@@ -12,6 +12,7 @@ interface LayoutSplitData {
   direction?: 'horizontal' | 'vertical';
   children?: LayoutSplitData[];
   paneId?: string;
+  sizes?: number[];
 }
 
 interface PaneState {
@@ -21,7 +22,14 @@ interface PaneState {
 }
 
 interface DocumentState {
-  tabs: Array<{ id: string; title: string; content: string; hidden?: boolean }>;
+  tabs: Array<{
+    id: string;
+    title: string;
+    content: string;
+    hidden?: boolean;
+    isPreview?: boolean;
+    sourceTabId?: string;
+  }>;
   activeTabId: string | null;
   tabCounter: number;
 }
@@ -44,6 +52,8 @@ interface TabCreateMessage {
   tabId: string;
   title: string;
   content: string;
+  isPreview?: boolean;
+  sourceTabId?: string;
   from: string;
 }
 
@@ -153,6 +163,18 @@ export class SpaceRoom {
         panes_json TEXT NOT NULL
       );
     `);
+
+    // Migration: Add preview columns to existing tabs table
+    try {
+      this.sql.exec(`ALTER TABLE tabs ADD COLUMN is_preview INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.sql.exec(`ALTER TABLE tabs ADD COLUMN source_tab_id TEXT`);
+    } catch {
+      // Column already exists
+    }
   }
 
   private loadState(): void {
@@ -161,12 +183,14 @@ export class SpaceRoom {
     const docRow = docRows.length > 0 ? docRows[0] : null;
 
     // Load tabs
-    const tabRows = this.sql.exec('SELECT id, title, content, hidden FROM tabs ORDER BY sort_order').toArray();
+    const tabRows = this.sql.exec('SELECT id, title, content, hidden, is_preview, source_tab_id FROM tabs ORDER BY sort_order').toArray();
     const tabs = tabRows.map(row => ({
       id: row.id as string,
       title: row.title as string,
       content: row.content as string,
       hidden: row.hidden === 1,
+      isPreview: row.is_preview === 1,
+      sourceTabId: row.source_tab_id as string | undefined,
     }));
 
     if (docRow || tabs.length > 0) {
@@ -188,10 +212,35 @@ export class SpaceRoom {
     }
   }
 
+  private initializeDefaultState(): void {
+    // Create default document with one untitled tab
+    const defaultTabId = `tab-${Date.now()}-1`;
+    this.documentState = {
+      tabs: [{
+        id: defaultTabId,
+        title: 'untitled-1.txt',
+        content: '',
+        hidden: false,
+      }],
+      activeTabId: defaultTabId,
+      tabCounter: 1,
+    };
+    this.persistState();
+  }
+
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    // Handle init request - create default state if empty
+    if (url.pathname === '/init' && request.method === 'POST') {
+      if (!this.documentState || this.documentState.tabs.length === 0) {
+        this.initializeDefaultState();
+      }
+      return new Response('OK', { status: 200 });
+    }
+
     // Extract spaceId from URL if not already set
     if (!this.spaceId) {
-      const url = new URL(request.url);
       const match = url.pathname.match(/\/ws\/space\/(.+)/);
       if (match) {
         this.spaceId = match[1];
@@ -328,6 +377,8 @@ export class SpaceRoom {
           id: message.tabId,
           title: message.title,
           content: message.content,
+          isPreview: message.isPreview,
+          sourceTabId: message.sourceTabId,
         });
         this.persistState();
         this.trackWrite(); // Track in D1
@@ -447,18 +498,22 @@ export class SpaceRoom {
     // Upsert tabs
     this.documentState.tabs.forEach((tab, index) => {
       this.sql.exec(
-        `INSERT INTO tabs (id, title, content, hidden, sort_order)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO tabs (id, title, content, hidden, sort_order, is_preview, source_tab_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            content = excluded.content,
            hidden = excluded.hidden,
-           sort_order = excluded.sort_order`,
+           sort_order = excluded.sort_order,
+           is_preview = excluded.is_preview,
+           source_tab_id = excluded.source_tab_id`,
         tab.id,
         tab.title,
         tab.content,
         tab.hidden ? 1 : 0,
-        index
+        index,
+        tab.isPreview ? 1 : 0,
+        tab.sourceTabId ?? null
       );
     });
   }

@@ -26,6 +26,25 @@ html, body {
   overflow: hidden;
 }
 
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #6e6e6e;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.875rem;
+}
+
+.loading-state a {
+  color: #569cd6;
+  text-decoration: none;
+}
+
+.loading-state a:hover {
+  text-decoration: underline;
+}
+
 .pane {
   display: flex;
   flex-direction: column;
@@ -791,4 +810,202 @@ html, body {
 
 .html-editor:focus {
   outline: none;
+}
+
+/* Preview Container - Rams-inspired: Less, but better */
+.preview-container {
+  flex: 1;
+  overflow-y: auto;
+  background-color: #1e1e1e;
+}
+
+.markdown-preview-content {
+  max-width: 42rem;
+  padding: 2rem;
+  padding-bottom: 5rem;
+  line-height: 1.7;
+  color: #a0a0a0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.9375rem;
+}
+
+/* Headers: hierarchy through size alone, not color or decoration */
+.markdown-preview-content h1 {
+  font-size: 1.75em;
+  font-weight: 500;
+  margin: 2em 0 0.75em 0;
+  color: #c8c8c8;
+  letter-spacing: -0.01em;
+}
+
+.markdown-preview-content h1:first-child {
+  margin-top: 0;
+}
+
+.markdown-preview-content h2 {
+  font-size: 1.35em;
+  font-weight: 500;
+  margin: 1.75em 0 0.6em 0;
+  color: #c8c8c8;
+}
+
+.markdown-preview-content h3 {
+  font-size: 1.1em;
+  font-weight: 500;
+  margin: 1.5em 0 0.5em 0;
+  color: #b0b0b0;
+}
+
+.markdown-preview-content h4,
+.markdown-preview-content h5,
+.markdown-preview-content h6 {
+  font-size: 1em;
+  font-weight: 500;
+  margin: 1.25em 0 0.5em 0;
+  color: #a0a0a0;
+}
+
+.markdown-preview-content p {
+  margin: 0 0 1.2em 0;
+}
+
+/* Code: monospace distinguishes it, minimal background */
+.markdown-preview-content code {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 0.875em;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.15em 0.4em;
+  border-radius: 0.125rem;
+}
+
+.markdown-preview-content pre {
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1rem 1.25rem;
+  margin: 1.5em 0;
+  overflow-x: auto;
+  border-radius: 0.125rem;
+}
+
+.markdown-preview-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+/* Blockquote: subtle left accent, nothing more */
+.markdown-preview-content blockquote {
+  border-left: 0.125rem solid #404040;
+  margin: 1.5em 0;
+  padding: 0 0 0 1.25em;
+  color: #808080;
+}
+
+.markdown-preview-content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists: proper spacing, nothing decorative */
+.markdown-preview-content ul,
+.markdown-preview-content ol {
+  margin: 1.2em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-preview-content li {
+  margin-bottom: 0.4em;
+}
+
+.markdown-preview-content li:last-child {
+  margin-bottom: 0;
+}
+
+/* Links: muted, functional */
+.markdown-preview-content a {
+  color: #a0a0a0;
+  text-decoration: underline;
+  text-decoration-color: #505050;
+  text-underline-offset: 2px;
+}
+
+.markdown-preview-content a:hover {
+  color: #c8c8c8;
+  text-decoration-color: #808080;
+}
+
+/* Images: no decoration */
+.markdown-preview-content img {
+  max-width: 100%;
+  height: auto;
+  margin: 1.5em 0;
+}
+
+/* Horizontal rule: minimal */
+.markdown-preview-content hr {
+  border: none;
+  border-top: 0.0625rem solid #2d2d2d;
+  margin: 2.5em 0;
+}
+
+/* Empty state */
+.markdown-preview-content .empty-preview {
+  color: #505050;
+}
+
+/* Strong/emphasis: subtle differentiation */
+.markdown-preview-content strong {
+  font-weight: 600;
+  color: #b0b0b0;
+}
+
+.markdown-preview-content em {
+  font-style: italic;
+}
+
+.markdown-preview-content del {
+  color: #606060;
+}
+
+/* Tables (GFM) */
+.markdown-preview-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+}
+
+.markdown-preview-content th,
+.markdown-preview-content td {
+  padding: 0.6em 1em;
+  text-align: left;
+  border-bottom: 0.0625rem solid #2d2d2d;
+}
+
+.markdown-preview-content th {
+  color: #b0b0b0;
+  font-weight: 500;
+}
+
+.markdown-preview-content tr:last-child td {
+  border-bottom: none;
+}
+
+/* Task lists (GFM) */
+.markdown-preview-content input[type="checkbox"] {
+  margin-right: 0.5em;
+  accent-color: #606060;
+}
+
+.markdown-preview-content li:has(input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.5em;
+}
+
+/* Preview tab styling */
+.tab[data-tab-id^="preview-"] .tab-title {
+  font-style: italic;
+  color: #9d9d9d;
+}
+
+.tab[data-tab-id^="preview-"].active .tab-title {
+  color: #d4d4d4;
 }
