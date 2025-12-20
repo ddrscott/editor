@@ -2084,6 +2084,9 @@ export class EditorApp {
       'cpp': 'cpp',
       'h': 'c',
       'hpp': 'cpp',
+      'pgsql': 'sql',
+      'psql': 'sql',
+      'duckdb': 'sql',
     };
     return langMap[ext || ''] || 'plaintext';
   }
@@ -2606,6 +2609,11 @@ export class EditorApp {
 
     if (!this.outputPane) return;
 
+    // Show reset button for SQL files
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const isSqlFile = ext === 'pgsql' || ext === 'psql' || ext === 'duckdb';
+    this.outputPane.setShowResetDb(isSqlFile);
+
     // Show loading state
     this.outputPane.showLoading('Initializing runtime...');
 
@@ -2618,6 +2626,57 @@ export class EditorApp {
         success: false,
         output: '',
         error: `Execution failed: ${error}`
+      });
+    }
+  }
+
+  /**
+   * Reset the SQL database for the current file type
+   */
+  private async resetDatabase(): Promise<void> {
+    if (!this.outputPane || !this.activePane) return;
+
+    const activeTab = this.activePane.getActiveTab();
+    if (!activeTab) return;
+
+    const ext = activeTab.title.split('.').pop()?.toLowerCase();
+    const isPostgres = ext === 'pgsql' || ext === 'psql';
+    const isDuckDB = ext === 'duckdb';
+
+    if (!isPostgres && !isDuckDB) return;
+
+    const dbName = isPostgres ? 'PostgreSQL' : 'DuckDB';
+
+    // Confirm with user
+    const confirmed = confirm(
+      `Are you sure you want to reset the ${dbName} database?\n\n` +
+      'This will delete all tables and data. This action cannot be undone.'
+    );
+
+    if (!confirmed) return;
+
+    this.outputPane.showLoading('Resetting database...');
+
+    try {
+      if (isPostgres) {
+        const { PostgresRunner } = await import('../runners/PostgresRunner');
+        const runner = new PostgresRunner();
+        await runner.dropDatabase();
+      } else {
+        const { DuckDBRunner } = await import('../runners/DuckDBRunner');
+        const runner = new DuckDBRunner();
+        await runner.resetDatabase();
+      }
+
+      this.outputPane.showOutput({
+        success: true,
+        output: `${dbName} database reset successfully.\n\nAll tables and data have been deleted.`
+      });
+    } catch (error) {
+      this.outputPane.showOutput({
+        success: false,
+        output: '',
+        error: `Failed to reset database: ${error}`
       });
     }
   }
@@ -2656,7 +2715,8 @@ export class EditorApp {
     // Create output pane
     this.outputPane = new OutputPane(bottomChild, {
       onClose: () => this.closeOutputPane(),
-      onRerun: () => this.runActiveFile()
+      onRerun: () => this.runActiveFile(),
+      onResetDb: () => this.resetDatabase()
     });
 
     // Setup resizer
@@ -2711,7 +2771,7 @@ export class EditorApp {
 
     const supported = document.createElement('p');
     supported.className = 'coming-soon-supported';
-    supported.innerHTML = '<strong>Currently supported:</strong> Java (.java), Python (.py)';
+    supported.innerHTML = '<strong>Currently supported:</strong> Java (.java), Python (.py), PostgreSQL (.pgsql), DuckDB (.duckdb)';
 
     const button = document.createElement('button');
     button.className = 'coming-soon-button';

@@ -25,7 +25,8 @@ const LANGUAGES: LanguageOption[] = [
   { name: 'CSS', filename: 'styles.css', icon: 'braces' },
   { name: 'Markdown', filename: 'README.md', icon: 'file-text' },
   { name: 'JSON', filename: 'data.json', icon: 'file-json' },
-  { name: 'SQL', filename: 'query.sql', icon: 'database' },
+  { name: 'PostgreSQL', filename: 'query.pgsql', icon: 'database' },
+  { name: 'DuckDB', filename: 'query.duckdb', icon: 'database' },
   { name: 'Shell', filename: 'script.sh', icon: 'terminal' },
   { name: 'YAML', filename: 'config.yaml', icon: 'file' },
 ];

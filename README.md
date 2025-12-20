@@ -15,7 +15,7 @@ A real-time collaborative code editor built with Monaco Editor, Cloudflare Worke
 - **Shareable Spaces** - Share any space URL for instant collaboration
 - **Quick Start Grid** - One-click buttons for 20 popular languages on the landing page
 - **Custom Filename URLs** - Create spaces with specific filenames via `/new/{filename}`
-- **Code Execution** - Run Java and Python code directly in the browser
+- **Code Execution** - Run Java, Python, PostgreSQL, and DuckDB directly in the browser
 
 ## Quick Start URLs
 
@@ -41,10 +41,27 @@ Run code directly in the browser using the **Run** button or `Cmd+R`:
 |----------|---------|------------|
 | Java | CheerpJ (WebAssembly JVM) | `.java` |
 | Python | Pyodide (WebAssembly CPython) | `.py` |
+| PostgreSQL | PGlite (WebAssembly Postgres) | `.pgsql`, `.psql` |
+| DuckDB | DuckDB-WASM | `.duckdb` |
 
 For unsupported languages, clicking Run shows a "Coming Soon" dialog.
 
 **Note:** First run may take a few seconds to download the runtime (~15-30MB cached).
+
+### PostgreSQL Features
+
+- **Persistent Storage**: Each space has its own PostgreSQL database stored in IndexedDB
+- **Full PostgreSQL**: Supports tables, indexes, constraints, CTEs, window functions, etc.
+- **Reset Database**: Click "Reset DB" in the output panel to clear all tables and data
+- **ASCII Tables**: Query results display as formatted ASCII tables
+
+### DuckDB Features
+
+- **In-Memory Analytics**: Optimized for analytical queries (OLAP)
+- **Columnar Storage**: Efficient for aggregations and data analysis
+- **Modern SQL**: Supports CTEs, window functions, UNNEST, LIST types, etc.
+- **Data Import**: Can query CSV, Parquet, and JSON files via URLs
+- **Reset Database**: Click "Reset DB" to clear all tables
 
 ## Architecture
 
@@ -79,6 +96,12 @@ src/
 │   └── LegalPage.ts      # Terms/Privacy
 ├── app/EditorApp.ts      # Main editor (tabs, panes, Monaco)
 ├── sync/SyncClient.ts    # WebSocket sync client
+├── runners/
+│   ├── RunnerManager.ts  # Code execution router
+│   ├── JavaRunner.ts     # CheerpJ JVM
+│   ├── PythonRunner.ts   # Pyodide CPython
+│   ├── PostgresRunner.ts # PGlite (IndexedDB)
+│   └── DuckDBRunner.ts   # DuckDB-WASM (CDN)
 └── preview/
     ├── MarkdownPreview.ts
     └── HTMLPreview.ts
@@ -164,7 +187,7 @@ Messages between client and server:
 | `Cmd+N` | New tab |
 | `Cmd+W` | Close tab |
 | `Cmd+S` | Save (triggers sync) |
-| `Cmd+R` | Run code (Java, Python) |
+| `Cmd+R` | Run code (Java, Python, PostgreSQL, DuckDB) |
 | `Cmd+K V` | Split with markdown preview |
 | `Cmd+Shift+V` | Markdown preview (replace) |
 | `Cmd+\` | Split pane |

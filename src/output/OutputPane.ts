@@ -3,6 +3,7 @@ import { ExecutionResult } from '../runners/LanguageRunner';
 export interface OutputPaneOptions {
   onClose: () => void;
   onRerun?: () => void;
+  onResetDb?: () => void;
 }
 
 /**
@@ -16,15 +17,19 @@ export class OutputPane {
   private outputEl: HTMLPreElement;
   private readonly onClose: () => void;
   private readonly onRerun?: () => void;
+  private readonly onResetDb?: () => void;
+  private resetDbButton: HTMLButtonElement | null = null;
 
   // Store bound event handlers for cleanup
   private closeHandler: () => void;
   private clearHandler: () => void;
   private rerunHandler: () => void;
+  private resetDbHandler: () => void;
 
   constructor(parent: HTMLElement, options: OutputPaneOptions) {
     this.onClose = options.onClose;
     this.onRerun = options.onRerun;
+    this.onResetDb = options.onResetDb;
 
     // Create bound handlers for proper cleanup
     this.closeHandler = () => this.close();
@@ -32,6 +37,11 @@ export class OutputPane {
     this.rerunHandler = () => {
       if (this.onRerun) {
         this.onRerun();
+      }
+    };
+    this.resetDbHandler = () => {
+      if (this.onResetDb) {
+        this.onResetDb();
       }
     };
 
@@ -48,6 +58,7 @@ export class OutputPane {
         <span>Output</span>
       </div>
       <div class="output-pane-actions">
+        <button class="output-reset-db" title="Reset Database" style="display: none;">Reset DB</button>
         <button class="output-rerun" title="Run Again (Cmd+R)">&#8635; Run</button>
         <button class="output-clear" title="Clear Output">Clear</button>
         <button class="output-close" title="Close Panel">&times;</button>
@@ -70,10 +81,14 @@ export class OutputPane {
     this.container.appendChild(this.outputEl);
     parent.appendChild(this.container);
 
+    // Store reference to reset button
+    this.resetDbButton = this.headerEl.querySelector('.output-reset-db');
+
     // Event listeners (using bound handlers for cleanup)
     this.headerEl.querySelector('.output-close')?.addEventListener('click', this.closeHandler);
     this.headerEl.querySelector('.output-clear')?.addEventListener('click', this.clearHandler);
     this.headerEl.querySelector('.output-rerun')?.addEventListener('click', this.rerunHandler);
+    this.resetDbButton?.addEventListener('click', this.resetDbHandler);
   }
 
   showOutput(result: ExecutionResult): void {
@@ -117,6 +132,15 @@ export class OutputPane {
   }
 
   /**
+   * Show or hide the "Reset DB" button (for SQL files)
+   */
+  setShowResetDb(show: boolean): void {
+    if (this.resetDbButton) {
+      this.resetDbButton.style.display = show ? 'inline-flex' : 'none';
+    }
+  }
+
+  /**
    * Destroy the output pane and clean up resources
    */
   destroy(): void {
@@ -124,6 +148,7 @@ export class OutputPane {
     this.headerEl.querySelector('.output-close')?.removeEventListener('click', this.closeHandler);
     this.headerEl.querySelector('.output-clear')?.removeEventListener('click', this.clearHandler);
     this.headerEl.querySelector('.output-rerun')?.removeEventListener('click', this.rerunHandler);
+    this.resetDbButton?.removeEventListener('click', this.resetDbHandler);
 
     // Remove from DOM
     this.container.remove();

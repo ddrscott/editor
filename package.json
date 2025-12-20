@@ -17,6 +17,7 @@
     "wrangler": "^4.51.0"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.3.14",
     "lucide": "^0.562.0",
     "marked": "^17.0.1",
     "monaco-editor": "^0.52.0",
