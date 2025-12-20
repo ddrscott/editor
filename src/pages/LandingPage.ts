@@ -1,4 +1,34 @@
 import { Router } from '../router/Router';
+import { createIcons, FileCode, FileText, FileJson, Database, Terminal, Braces, Hash, Code, File } from 'lucide';
+
+interface LanguageOption {
+  name: string;
+  filename: string;
+  icon: string;
+}
+
+const LANGUAGES: LanguageOption[] = [
+  { name: 'JavaScript', filename: 'script.js', icon: 'file-code' },
+  { name: 'TypeScript', filename: 'app.ts', icon: 'file-code' },
+  { name: 'Python', filename: 'main.py', icon: 'file-code' },
+  { name: 'Java', filename: 'Main.java', icon: 'file-code' },
+  { name: 'C++', filename: 'main.cpp', icon: 'file-code' },
+  { name: 'C', filename: 'main.c', icon: 'file-code' },
+  { name: 'C#', filename: 'Program.cs', icon: 'file-code' },
+  { name: 'Go', filename: 'main.go', icon: 'file-code' },
+  { name: 'Rust', filename: 'main.rs', icon: 'file-code' },
+  { name: 'Ruby', filename: 'app.rb', icon: 'file-code' },
+  { name: 'PHP', filename: 'index.php', icon: 'file-code' },
+  { name: 'Swift', filename: 'main.swift', icon: 'file-code' },
+  { name: 'Kotlin', filename: 'Main.kt', icon: 'file-code' },
+  { name: 'HTML', filename: 'index.html', icon: 'code' },
+  { name: 'CSS', filename: 'styles.css', icon: 'braces' },
+  { name: 'Markdown', filename: 'README.md', icon: 'file-text' },
+  { name: 'JSON', filename: 'data.json', icon: 'file-json' },
+  { name: 'SQL', filename: 'query.sql', icon: 'database' },
+  { name: 'Shell', filename: 'script.sh', icon: 'terminal' },
+  { name: 'YAML', filename: 'config.yaml', icon: 'file' },
+];
 
 export class LandingPage {
   private element: HTMLElement;
@@ -10,9 +40,18 @@ export class LandingPage {
     this.element.className = 'landing-page';
     this.render();
     container.appendChild(this.element);
+    this.initIcons();
   }
 
   private render(): void {
+    const languageButtons = LANGUAGES.map(lang => `
+      <a href="/new/${encodeURIComponent(lang.filename)}" class="lang-btn" title="${lang.name}">
+        <i data-lucide="${lang.icon}"></i>
+        <span class="lang-name">${lang.name}</span>
+        <span class="lang-ext">${lang.filename.split('.').pop()}</span>
+      </a>
+    `).join('');
+
     this.element.innerHTML = `
       <div class="landing-container">
         <header class="landing-header">
@@ -32,6 +71,13 @@ export class LandingPage {
           <p class="landing-hint">
             <kbd>Cmd</kbd> + <kbd>Enter</kbd>
           </p>
+
+          <section class="lang-grid-section">
+            <h2 class="lang-grid-title">Quick Start</h2>
+            <div class="lang-grid">
+              ${languageButtons}
+            </div>
+          </section>
 
           <ul class="landing-features">
             <li>Monaco editor with 50+ language support</li>
@@ -57,6 +103,19 @@ export class LandingPage {
     createBtn?.addEventListener('click', () => this.createSpace());
 
     document.addEventListener('keydown', this.handleKeydown);
+  }
+
+  private initIcons(): void {
+    // Initialize Lucide icons after element is in DOM
+    createIcons({
+      icons: { FileCode, FileText, FileJson, Database, Terminal, Braces, Hash, Code, File },
+      attrs: {
+        'stroke-width': 1.5,
+        width: 20,
+        height: 20,
+      },
+      nameAttr: 'data-lucide',
+    });
   }
 
   private handleKeydown = (e: KeyboardEvent): void => {

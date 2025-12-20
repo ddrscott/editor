@@ -17,6 +17,7 @@
     "wrangler": "^4.51.0"
   },
   "dependencies": {
+    "lucide": "^0.562.0",
     "marked": "^17.0.1",
     "monaco-editor": "^0.52.0",
     "y-monaco": "^0.1.6",

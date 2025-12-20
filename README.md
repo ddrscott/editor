@@ -13,6 +13,24 @@ A real-time collaborative code editor built with Monaco Editor, Cloudflare Worke
 - **Multi-tab Interface** - Create, rename, close, and drag tabs between panes
 - **Persistent State** - All tabs, content, splits, and previews persist via Durable Objects
 - **Shareable Spaces** - Share any space URL for instant collaboration
+- **Quick Start Grid** - One-click buttons for 20 popular languages on the landing page
+- **Custom Filename URLs** - Create spaces with specific filenames via `/new/{filename}`
+
+## Quick Start URLs
+
+Create a new space with a specific filename by visiting `/new/{filename}`:
+
+| URL | Creates |
+|-----|---------|
+| `monaco.ljs.app/new/Hello.java` | Space with `Hello.java` |
+| `monaco.ljs.app/new/script.py` | Space with `script.py` |
+| `monaco.ljs.app/new/README.md` | Space with `README.md` |
+| `monaco.ljs.app/new/index.html` | Space with `index.html` |
+
+This is useful for:
+- **Classrooms** - Teachers share links like `/new/Assignment1.java`
+- **Workshops** - Pre-configured starting files for tutorials
+- **Quick sharing** - Direct links to specific file types
 
 ## Architecture
 
@@ -23,6 +41,7 @@ A real-time collaborative code editor built with Monaco Editor, Cloudflare Worke
 │  Worker (index.ts)                                          │
 │  ├── Static Assets (dist/)                                  │
 │  ├── /new → Creates space, redirects to /space/{id}         │
+│  ├── /new/{filename} → Creates space with custom filename   │
 │  └── /ws/space/{id} → WebSocket to Durable Object           │
 ├─────────────────────────────────────────────────────────────┤
 │  SpaceRoom (Durable Object)                                 │
@@ -97,7 +116,9 @@ npm start
 
 ## Data Flow
 
-1. User visits `/new` → Worker creates Durable Object with default document
+1. User visits `/new` or `/new/{filename}` → Worker creates Durable Object
+   - `/new` creates default `untitled-1.txt`
+   - `/new/Hello.java` creates `Hello.java` with proper syntax highlighting
 2. Redirect to `/space/{uuid}` → Client connects via WebSocket
 3. Durable Object sends initial state (tabs, layout, content)
 4. All changes sync bidirectionally:
