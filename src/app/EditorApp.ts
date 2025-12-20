@@ -2597,6 +2597,7 @@ export class EditorApp {
 
     // Check if file is runnable
     if (!this.runnerManager.canRun(filename)) {
+      this.showComingSoonDialog(filename);
       return;
     }
 
@@ -2681,5 +2682,66 @@ export class EditorApp {
 
     // Re-layout all panes
     this.panes.forEach(pane => pane.layout());
+  }
+
+  /**
+   * Show "Coming Soon" dialog for unsupported languages
+   */
+  private showComingSoonDialog(filename: string): void {
+    const ext = filename.split('.').pop()?.toLowerCase() || 'unknown';
+
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'coming-soon-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'coming-soon-dialog';
+
+    const icon = document.createElement('div');
+    icon.className = 'coming-soon-icon';
+    icon.textContent = '🚀';
+
+    const title = document.createElement('h2');
+    title.className = 'coming-soon-title';
+    title.textContent = 'Support Coming Soon!';
+
+    const message = document.createElement('p');
+    message.className = 'coming-soon-message';
+    message.textContent = `Running .${ext} files is not yet supported. We're working on adding more language runtimes.`;
+
+    const supported = document.createElement('p');
+    supported.className = 'coming-soon-supported';
+    supported.innerHTML = '<strong>Currently supported:</strong> Java (.java), Python (.py)';
+
+    const button = document.createElement('button');
+    button.className = 'coming-soon-button';
+    button.textContent = 'Got it';
+    button.addEventListener('click', () => overlay.remove());
+
+    dialog.appendChild(icon);
+    dialog.appendChild(title);
+    dialog.appendChild(message);
+    dialog.appendChild(supported);
+    dialog.appendChild(button);
+    overlay.appendChild(dialog);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+
+    // Close on Escape key
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        overlay.remove();
+        document.removeEventListener('keydown', handleEscape);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+
+    document.body.appendChild(overlay);
+    button.focus();
   }
 }

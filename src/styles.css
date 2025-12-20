@@ -1235,3 +1235,101 @@ html, body {
   flex-direction: column;
   min-height: 100px;
 }
+
+/* ===========================================
+   Coming Soon Dialog
+   =========================================== */
+
+.coming-soon-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.coming-soon-dialog {
+  background-color: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  padding: 32px 40px;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.coming-soon-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.coming-soon-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin: 0 0 12px 0;
+}
+
+.coming-soon-message {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.9375rem;
+  color: #a0a0a0;
+  line-height: 1.5;
+  margin: 0 0 16px 0;
+}
+
+.coming-soon-supported {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.875rem;
+  color: #808080;
+  margin: 0 0 24px 0;
+}
+
+.coming-soon-supported strong {
+  color: #a0a0a0;
+}
+
+.coming-soon-button {
+  background-color: #0e639c;
+  color: #ffffff;
+  border: none;
+  padding: 10px 32px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.9375rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.coming-soon-button:hover {
+  background-color: #1177bb;
+}
+
+.coming-soon-button:focus {
+  outline: 2px solid #007acc;
+  outline-offset: 2px;
+}

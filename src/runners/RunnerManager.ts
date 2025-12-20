@@ -1,5 +1,6 @@
 import { LanguageRunner, ExecutionResult } from './LanguageRunner';
 import { JavaRunner } from './JavaRunner';
+import { PythonRunner } from './PythonRunner';
 
 /**
  * Manages language runners and routes execution requests to the appropriate runner.
@@ -11,7 +12,7 @@ export class RunnerManager {
   constructor() {
     // Register built-in runners
     this.registerRunner(new JavaRunner());
-    // Future: this.registerRunner(new PythonRunner());
+    this.registerRunner(new PythonRunner());
   }
 
   /**

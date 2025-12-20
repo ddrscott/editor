@@ -15,6 +15,7 @@ A real-time collaborative code editor built with Monaco Editor, Cloudflare Worke
 - **Shareable Spaces** - Share any space URL for instant collaboration
 - **Quick Start Grid** - One-click buttons for 20 popular languages on the landing page
 - **Custom Filename URLs** - Create spaces with specific filenames via `/new/{filename}`
+- **Code Execution** - Run Java and Python code directly in the browser
 
 ## Quick Start URLs
 
@@ -31,6 +32,19 @@ This is useful for:
 - **Classrooms** - Teachers share links like `/new/Assignment1.java`
 - **Workshops** - Pre-configured starting files for tutorials
 - **Quick sharing** - Direct links to specific file types
+
+## Code Execution
+
+Run code directly in the browser using the **Run** button or `Cmd+R`:
+
+| Language | Runtime | Extensions |
+|----------|---------|------------|
+| Java | CheerpJ (WebAssembly JVM) | `.java` |
+| Python | Pyodide (WebAssembly CPython) | `.py` |
+
+For unsupported languages, clicking Run shows a "Coming Soon" dialog.
+
+**Note:** First run may take a few seconds to download the runtime (~15-30MB cached).
 
 ## Architecture
 
@@ -150,6 +164,7 @@ Messages between client and server:
 | `Cmd+N` | New tab |
 | `Cmd+W` | Close tab |
 | `Cmd+S` | Save (triggers sync) |
+| `Cmd+R` | Run code (Java, Python) |
 | `Cmd+K V` | Split with markdown preview |
 | `Cmd+Shift+V` | Markdown preview (replace) |
 | `Cmd+\` | Split pane |
