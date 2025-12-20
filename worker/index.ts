@@ -14,15 +14,25 @@ export default {
     const path = url.pathname;
 
     // Create new space - server generates ID and initializes Durable Object
-    if (path === '/new') {
+    // Supports /new and /new/:filename patterns
+    if (path === '/new' || path.startsWith('/new/')) {
       const spaceId = crypto.randomUUID();
+
+      // Extract optional filename from path (e.g., /new/Hello.java -> Hello.java)
+      const filename = path.startsWith('/new/') ? decodeURIComponent(path.slice(5)) : null;
 
       // Initialize the Durable Object with default state
       const id = env.SPACE_ROOM.idFromName(spaceId);
       const room = env.SPACE_ROOM.get(id);
 
       // Call init endpoint to ensure DO is created with default state
-      await room.fetch(new Request('https://internal/init', { method: 'POST' }));
+      // Pass filename in body if provided
+      const initRequest = new Request('https://internal/init', {
+        method: 'POST',
+        headers: filename ? { 'Content-Type': 'application/json' } : {},
+        body: filename ? JSON.stringify({ filename }) : null,
+      });
+      await room.fetch(initRequest);
 
       // Track the new space
       await trackSpaceRead(env.DB, spaceId);

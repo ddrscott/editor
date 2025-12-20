@@ -212,13 +212,15 @@ export class SpaceRoom {
     }
   }
 
-  private initializeDefaultState(): void {
-    // Create default document with one untitled tab
+  private initializeDefaultState(filename?: string): void {
+    // Create default document with one tab
+    // Use provided filename or default to untitled-1.txt
     const defaultTabId = `tab-${Date.now()}-1`;
+    const tabTitle = filename || 'untitled-1.txt';
     this.documentState = {
       tabs: [{
         id: defaultTabId,
-        title: 'untitled-1.txt',
+        title: tabTitle,
         content: '',
         hidden: false,
       }],
@@ -234,7 +236,15 @@ export class SpaceRoom {
     // Handle init request - create default state if empty
     if (url.pathname === '/init' && request.method === 'POST') {
       if (!this.documentState || this.documentState.tabs.length === 0) {
-        this.initializeDefaultState();
+        // Parse optional filename from request body
+        let filename: string | undefined;
+        try {
+          const body = await request.json() as { filename?: string };
+          filename = body.filename;
+        } catch {
+          // No body or invalid JSON - use default filename
+        }
+        this.initializeDefaultState(filename);
       }
       return new Response('OK', { status: 200 });
     }
