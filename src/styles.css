@@ -435,6 +435,46 @@ html, body {
   color: #808080;
 }
 
+/* Featured runnable languages section */
+.lang-grid-featured {
+  margin-bottom: 32px;
+}
+
+.lang-grid-featured .lang-grid-title {
+  color: #4ec9b0;
+}
+
+/* Runnable language buttons */
+.lang-btn-runnable {
+  position: relative;
+  border-color: rgba(78, 201, 176, 0.3);
+  background-color: rgba(78, 201, 176, 0.05);
+}
+
+.lang-btn-runnable:hover {
+  border-color: #4ec9b0;
+  background-color: rgba(78, 201, 176, 0.15);
+}
+
+.lang-btn-runnable svg {
+  color: #4ec9b0;
+}
+
+/* Run badge */
+.lang-run-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  background-color: #4ec9b0;
+  color: #1e1e1e;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+}
+
 .landing-features {
   margin-top: 64px;
   padding: 0;

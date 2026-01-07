@@ -2087,6 +2087,8 @@ export class EditorApp {
       'pgsql': 'sql',
       'psql': 'sql',
       'duckdb': 'sql',
+      'sql': 'sql',
+      'sqlite': 'sql',
     };
     return langMap[ext || ''] || 'plaintext';
   }
@@ -2611,7 +2613,7 @@ export class EditorApp {
 
     // Show reset button for SQL files
     const ext = filename.split('.').pop()?.toLowerCase();
-    const isSqlFile = ext === 'pgsql' || ext === 'psql' || ext === 'duckdb';
+    const isSqlFile = ext === 'pgsql' || ext === 'psql' || ext === 'duckdb' || ext === 'sql' || ext === 'sqlite';
     this.outputPane.setShowResetDb(isSqlFile);
 
     // Show loading state
@@ -2642,10 +2644,11 @@ export class EditorApp {
     const ext = activeTab.title.split('.').pop()?.toLowerCase();
     const isPostgres = ext === 'pgsql' || ext === 'psql';
     const isDuckDB = ext === 'duckdb';
+    const isSQLite = ext === 'sql' || ext === 'sqlite';
 
-    if (!isPostgres && !isDuckDB) return;
+    if (!isPostgres && !isDuckDB && !isSQLite) return;
 
-    const dbName = isPostgres ? 'PostgreSQL' : 'DuckDB';
+    const dbName = isPostgres ? 'PostgreSQL' : isDuckDB ? 'DuckDB' : 'SQLite';
 
     // Confirm with user
     const confirmed = confirm(
@@ -2662,9 +2665,13 @@ export class EditorApp {
         const { PostgresRunner } = await import('../runners/PostgresRunner');
         const runner = new PostgresRunner();
         await runner.dropDatabase();
-      } else {
+      } else if (isDuckDB) {
         const { DuckDBRunner } = await import('../runners/DuckDBRunner');
         const runner = new DuckDBRunner();
+        await runner.resetDatabase();
+      } else {
+        const { SQLiteRunner } = await import('../runners/SQLiteRunner');
+        const runner = new SQLiteRunner();
         await runner.resetDatabase();
       }
 

@@ -40,6 +40,30 @@ const RUNNER_REGISTRY: RunnerInfo[] = [
       const { DuckDBRunner } = await import('./DuckDBRunner');
       return new DuckDBRunner();
     }
+  },
+  {
+    language: 'sqlite',
+    extensions: ['sql', 'sqlite'],
+    loader: async () => {
+      const { SQLiteRunner } = await import('./SQLiteRunner');
+      return new SQLiteRunner();
+    }
+  },
+  {
+    language: 'ruby',
+    extensions: ['rb'],
+    loader: async () => {
+      const { RubyRunner } = await import('./RubyRunner');
+      return new RubyRunner();
+    }
+  },
+  {
+    language: 'lua',
+    extensions: ['lua'],
+    loader: async () => {
+      const { LuaRunner } = await import('./LuaRunner');
+      return new LuaRunner();
+    }
   }
 ];
 

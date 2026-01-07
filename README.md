@@ -15,7 +15,7 @@ A real-time collaborative code editor built with Monaco Editor, Cloudflare Worke
 - **Shareable Spaces** - Share any space URL for instant collaboration
 - **Quick Start Grid** - One-click buttons for 20 popular languages on the landing page
 - **Custom Filename URLs** - Create spaces with specific filenames via `/new/{filename}`
-- **Code Execution** - Run Java, Python, PostgreSQL, and DuckDB directly in the browser
+- **Code Execution** - Run Java, Python, Ruby, Lua, PostgreSQL, DuckDB, and SQLite directly in the browser
 
 ## Quick Start URLs
 
@@ -41,8 +41,11 @@ Run code directly in the browser using the **Run** button or `Cmd+R`:
 |----------|---------|------------|
 | Java | CheerpJ (WebAssembly JVM) | `.java` |
 | Python | Pyodide (WebAssembly CPython) | `.py` |
+| Ruby | ruby.wasm (CRuby 3.4 WASM) | `.rb` |
+| Lua | Fengari (Lua 5.3 JS) | `.lua` |
 | PostgreSQL | PGlite (WebAssembly Postgres) | `.pgsql`, `.psql` |
 | DuckDB | DuckDB-WASM | `.duckdb` |
+| SQLite | sql.js (Emscripten SQLite) | `.sql`, `.sqlite` |
 
 For unsupported languages, clicking Run shows a "Coming Soon" dialog.
 
@@ -62,6 +65,24 @@ For unsupported languages, clicking Run shows a "Coming Soon" dialog.
 - **Modern SQL**: Supports CTEs, window functions, UNNEST, LIST types, etc.
 - **Data Import**: Can query CSV, Parquet, and JSON files via URLs
 - **Reset Database**: Click "Reset DB" to clear all tables
+
+### SQLite Features
+
+- **In-Memory Database**: Fast, lightweight embedded SQL database
+- **Full SQL Support**: Standard SQL with SQLite extensions
+- **Reset Database**: Click "Reset DB" to clear all tables
+
+### Ruby Features
+
+- **Full CRuby**: Complete Ruby interpreter via WebAssembly
+- **Standard Library**: Most of Ruby's stdlib available
+- **Output Capture**: stdout and return values displayed
+
+### Lua Features
+
+- **Lua 5.3**: Full Lua via Fengari (pure JavaScript)
+- **Lightweight**: No WASM, fast startup
+- **print() Support**: Output captured and displayed
 
 ## Architecture
 
@@ -100,8 +121,11 @@ src/
 │   ├── RunnerManager.ts  # Code execution router
 │   ├── JavaRunner.ts     # CheerpJ JVM
 │   ├── PythonRunner.ts   # Pyodide CPython
+│   ├── RubyRunner.ts     # ruby.wasm CRuby
+│   ├── LuaRunner.ts      # Fengari Lua 5.3
 │   ├── PostgresRunner.ts # PGlite (IndexedDB)
-│   └── DuckDBRunner.ts   # DuckDB-WASM (CDN)
+│   ├── DuckDBRunner.ts   # DuckDB-WASM (CDN)
+│   └── SQLiteRunner.ts   # sql.js (in-memory)
 └── preview/
     ├── MarkdownPreview.ts
     └── HTMLPreview.ts
@@ -187,7 +211,7 @@ Messages between client and server:
 | `Cmd+N` | New tab |
 | `Cmd+W` | Close tab |
 | `Cmd+S` | Save (triggers sync) |
-| `Cmd+R` | Run code (Java, Python, PostgreSQL, DuckDB) |
+| `Cmd+R` | Run code (Java, Python, Ruby, Lua, SQL) |
 | `Cmd+K V` | Split with markdown preview |
 | `Cmd+Shift+V` | Markdown preview (replace) |
 | `Cmd+\` | Split pane |
