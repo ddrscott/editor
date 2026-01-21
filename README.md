@@ -15,7 +15,7 @@ A real-time collaborative code editor built with Monaco Editor, Cloudflare Worke
 - **Shareable Spaces** - Share any space URL for instant collaboration
 - **Quick Start Grid** - One-click buttons for 20 popular languages on the landing page
 - **Custom Filename URLs** - Create spaces with specific filenames via `/new/{filename}`
-- **Code Execution** - Run Java, Python, Ruby, Lua, PostgreSQL, DuckDB, and SQLite directly in the browser
+- **Code Execution** - Run Java, Python, Ruby, Lua, PostgreSQL, DuckDB, SQLite, MySQL, and SQL Server
 
 ## Quick Start URLs
 
@@ -46,6 +46,8 @@ Run code directly in the browser using the **Run** button or `Cmd+R`:
 | PostgreSQL | PGlite (WebAssembly Postgres) | `.pgsql`, `.psql` |
 | DuckDB | DuckDB-WASM | `.duckdb` |
 | SQLite | sql.js (Emscripten SQLite) | `.sql`, `.sqlite` |
+| MySQL | db-api (MySQL 8 container) | `.mysql` |
+| SQL Server | db-api (SQL Server container) | `.mssql` |
 
 For unsupported languages, clicking Run shows a "Coming Soon" dialog.
 
@@ -83,6 +85,22 @@ For unsupported languages, clicking Run shows a "Coming Soon" dialog.
 - **Lua 5.3**: Full Lua via Fengari (pure JavaScript)
 - **Lightweight**: No WASM, fast startup
 - **print() Support**: Output captured and displayed
+
+### MySQL Features
+
+- **Real MySQL 8**: Queries run against actual MySQL containers via db-api service
+- **Collaborative Sessions**: Database instances shared between collaborators in the same space
+- **Ephemeral Instances**: Auto-expire after 30 minutes of inactivity, recreated on next query
+- **Query History**: All query results displayed in output panel with execution times
+- **Full MySQL Syntax**: Supports stored procedures, triggers, JSON functions, CTEs, etc.
+
+### SQL Server Features
+
+- **Real SQL Server**: T-SQL queries run against actual SQL Server containers via db-api
+- **Collaborative Sessions**: Database instances shared between collaborators in the same space
+- **Ephemeral Instances**: Auto-expire after 30 minutes of inactivity, recreated on next query
+- **Query History**: All query results displayed in output panel with execution times
+- **Full T-SQL**: Supports stored procedures, triggers, window functions, CTEs, etc.
 
 ## Architecture
 
@@ -125,7 +143,11 @@ src/
 │   ├── LuaRunner.ts      # Fengari Lua 5.3
 │   ├── PostgresRunner.ts # PGlite (IndexedDB)
 │   ├── DuckDBRunner.ts   # DuckDB-WASM (CDN)
-│   └── SQLiteRunner.ts   # sql.js (in-memory)
+│   ├── SQLiteRunner.ts   # sql.js (in-memory)
+│   ├── MySqlRunner.ts    # MySQL 8 via db-api
+│   └── MsSqlRunner.ts    # SQL Server via db-api
+├── sql/
+│   └── DbApiClient.ts    # HTTP client for db-api service
 └── preview/
     ├── MarkdownPreview.ts
     └── HTMLPreview.ts
@@ -203,6 +225,8 @@ Messages between client and server:
 | `tab-rename` | Bidirectional | Rename tab |
 | `layout-update` | Bidirectional | Pane structure + sizes |
 | `awareness` | Bidirectional | Cursor/selection positions |
+| `db-status` | Bidirectional | Database instance status (MySQL/SQL Server) |
+| `query-result` | Bidirectional | SQL query results (MySQL/SQL Server) |
 
 ## Keyboard Shortcuts
 
@@ -211,7 +235,7 @@ Messages between client and server:
 | `Cmd+N` | New tab |
 | `Cmd+W` | Close tab |
 | `Cmd+S` | Save (triggers sync) |
-| `Cmd+R` | Run code (Java, Python, Ruby, Lua, SQL) |
+| `Cmd+R` | Run code (Java, Python, Ruby, Lua, SQL, MySQL, SQL Server) |
 | `Cmd+K V` | Split with markdown preview |
 | `Cmd+Shift+V` | Markdown preview (replace) |
 | `Cmd+\` | Split pane |
