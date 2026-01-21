@@ -64,6 +64,22 @@ const RUNNER_REGISTRY: RunnerInfo[] = [
       const { LuaRunner } = await import('./LuaRunner');
       return new LuaRunner();
     }
+  },
+  {
+    language: 'mysql',
+    extensions: ['mysql'],
+    loader: async () => {
+      const { MySqlRunner } = await import('./MySqlRunner');
+      return new MySqlRunner();
+    }
+  },
+  {
+    language: 'mssql',
+    extensions: ['mssql'],
+    loader: async () => {
+      const { MsSqlRunner } = await import('./MsSqlRunner');
+      return new MsSqlRunner();
+    }
   }
 ];
 

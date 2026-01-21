@@ -31,6 +31,10 @@ database_name = "monaco-spaces"
 database_id = "c0722e49-e154-470a-b394-5e5a97a13cef"
 migrations_dir = "migrations"
 
+# Environment variables
+[vars]
+DB_API_URL = "https://db-api.ljs.app"
+
 # Development settings
 [dev]
 port = 8787

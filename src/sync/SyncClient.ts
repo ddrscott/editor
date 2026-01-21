@@ -10,12 +10,50 @@ interface AwarenessState {
   };
 }
 
+export interface DbInstance {
+  dialect: string;
+  instanceId: string;
+  status: string;
+  createdAt: number;
+}
+
+export interface QueryHistoryItem {
+  id?: number;
+  dialect: string;
+  sql: string;
+  output: string;
+  success: boolean;
+  timestamp: number;
+  executionTime?: number;
+}
+
 interface SyncMessage {
   type: 'sync';
   state: DocumentState | null;
   layout?: { layout: LayoutSplitData; panes: PaneState[] } | null;
   awareness: Record<string, AwarenessState>;
+  dbInstances?: DbInstance[];
+  queryHistory?: QueryHistoryItem[];
   clientId: string; // Server-assigned client ID
+}
+
+interface DbStatusMessage {
+  type: 'db-status';
+  dialect: string;
+  instanceId: string;
+  status: string;
+  from: string;
+}
+
+interface QueryResultMessage {
+  type: 'query-result';
+  dialect: string;
+  sql: string;
+  output: string;
+  success: boolean;
+  timestamp: number;
+  executionTime?: number;
+  from: string;
 }
 
 interface UpdateMessage {
@@ -107,12 +145,12 @@ interface DocumentState {
   panes?: PaneState[];
 }
 
-type ServerMessage = SyncMessage | UpdateMessage | AwarenessUpdateMessage | TabCreateMessage | TabCloseMessage | TabHideMessage | TabRestoreMessage | TabUpdateMessage | TabRenameMessage | FullSyncMessage | LayoutUpdateMessage;
-type ClientMessage = TabUpdateMessage | TabCreateMessage | TabCloseMessage | TabHideMessage | TabRestoreMessage | TabRenameMessage | FullSyncMessage | LayoutUpdateMessage | { type: 'awareness'; cursor?: unknown; selection?: unknown };
+type ServerMessage = SyncMessage | UpdateMessage | AwarenessUpdateMessage | TabCreateMessage | TabCloseMessage | TabHideMessage | TabRestoreMessage | TabUpdateMessage | TabRenameMessage | FullSyncMessage | LayoutUpdateMessage | DbStatusMessage | QueryResultMessage;
+type ClientMessage = TabUpdateMessage | TabCreateMessage | TabCloseMessage | TabHideMessage | TabRestoreMessage | TabRenameMessage | FullSyncMessage | LayoutUpdateMessage | DbStatusMessage | QueryResultMessage | { type: 'awareness'; cursor?: unknown; selection?: unknown };
 
 export interface SyncClientOptions {
   spaceId: string;
-  onSync?: (state: DocumentState | null) => void;
+  onSync?: (state: DocumentState | null, dbInstances?: DbInstance[], queryHistory?: QueryHistoryItem[]) => void;
   onTabUpdate?: (tabId: string, content: string, title?: string) => void;
   onTabCreate?: (tabId: string, title: string, content: string, isPreview?: boolean, sourceTabId?: string) => void;
   onTabClose?: (tabId: string) => void;
@@ -122,6 +160,8 @@ export interface SyncClientOptions {
   onLayoutUpdate?: (layout: LayoutSplitData, panes: PaneState[]) => void;
   onAwarenessChange?: (clients: Record<string, AwarenessState>) => void;
   onConnectionChange?: (connected: boolean) => void;
+  onDbStatus?: (dialect: string, instanceId: string, status: string) => void;
+  onQueryResult?: (result: QueryHistoryItem) => void;
 }
 
 export class SyncClient {
@@ -131,7 +171,7 @@ export class SyncClient {
   private maxReconnectAttempts = 10;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private connected = false;
-  private onSync?: (state: DocumentState) => void;
+  private onSync?: (state: DocumentState | null, dbInstances?: DbInstance[], queryHistory?: QueryHistoryItem[]) => void;
   private onTabUpdate?: (tabId: string, content: string, title?: string) => void;
   private onTabCreate?: (tabId: string, title: string, content: string, isPreview?: boolean, sourceTabId?: string) => void;
   private onTabClose?: (tabId: string) => void;
@@ -141,8 +181,11 @@ export class SyncClient {
   private onLayoutUpdate?: (layout: LayoutSplitData, panes: PaneState[]) => void;
   private onAwarenessChange?: (clients: Record<string, AwarenessState>) => void;
   private onConnectionChange?: (connected: boolean) => void;
+  private onDbStatus?: (dialect: string, instanceId: string, status: string) => void;
+  private onQueryResult?: (result: QueryHistoryItem) => void;
   private localAwareness: Partial<AwarenessState> = {};
   private clientId: string | null = null; // Will be assigned by server
+  private dbInstances: Map<string, DbInstance> = new Map(); // Cached db instances
 
   constructor(options: SyncClientOptions) {
     this.spaceId = options.spaceId;
@@ -156,6 +199,8 @@ export class SyncClient {
     this.onLayoutUpdate = options.onLayoutUpdate;
     this.onAwarenessChange = options.onAwarenessChange;
     this.onConnectionChange = options.onConnectionChange;
+    this.onDbStatus = options.onDbStatus;
+    this.onQueryResult = options.onQueryResult;
 
     this.connect();
   }
@@ -224,9 +269,11 @@ export class SyncClient {
   }
 
   private handleMessage(message: ServerMessage): void {
-    // Ignore messages from self
+    // Ignore messages from self (except for db-status and query-result which we want echoed back)
     if ('from' in message && message.from === this.clientId) {
-      return;
+      if (message.type !== 'db-status' && message.type !== 'query-result') {
+        return;
+      }
     }
 
     switch (message.type) {
@@ -235,8 +282,15 @@ export class SyncClient {
         if (message.clientId) {
           this.clientId = message.clientId;
         }
+        // Cache db instances
+        if (message.dbInstances) {
+          this.dbInstances.clear();
+          for (const instance of message.dbInstances) {
+            this.dbInstances.set(instance.dialect, instance);
+          }
+        }
         // Always call onSync so client can decide whether to send its state
-        this.onSync?.(message.state);
+        this.onSync?.(message.state, message.dbInstances, message.queryHistory);
         if (message.layout) {
           this.onLayoutUpdate?.(message.layout.layout, message.layout.panes);
         }
@@ -281,6 +335,28 @@ export class SyncClient {
 
       case 'awareness':
         this.onAwarenessChange?.(message.clients);
+        break;
+
+      case 'db-status':
+        // Update cached instance
+        this.dbInstances.set(message.dialect, {
+          dialect: message.dialect,
+          instanceId: message.instanceId,
+          status: message.status,
+          createdAt: Date.now(),
+        });
+        this.onDbStatus?.(message.dialect, message.instanceId, message.status);
+        break;
+
+      case 'query-result':
+        this.onQueryResult?.({
+          dialect: message.dialect,
+          sql: message.sql,
+          output: message.output,
+          success: message.success,
+          timestamp: message.timestamp,
+          executionTime: message.executionTime,
+        });
         break;
     }
   }
@@ -347,6 +423,50 @@ export class SyncClient {
       layout,
       panes,
     });
+  }
+
+  sendDbStatus(dialect: string, instanceId: string, status: string): void {
+    // Update local cache immediately
+    this.dbInstances.set(dialect, {
+      dialect,
+      instanceId,
+      status,
+      createdAt: Date.now(),
+    });
+    this.send({
+      type: 'db-status',
+      dialect,
+      instanceId,
+      status,
+    } as DbStatusMessage);
+  }
+
+  sendQueryResult(result: QueryHistoryItem): void {
+    this.send({
+      type: 'query-result',
+      dialect: result.dialect,
+      sql: result.sql,
+      output: result.output,
+      success: result.success,
+      timestamp: result.timestamp,
+      executionTime: result.executionTime,
+    } as QueryResultMessage);
+  }
+
+  /**
+   * Get the cached db instance ID for a dialect.
+   * Returns null if no instance exists.
+   */
+  getDbInstanceId(dialect: string): string | null {
+    const instance = this.dbInstances.get(dialect);
+    return instance?.instanceId ?? null;
+  }
+
+  /**
+   * Get all cached db instances.
+   */
+  getDbInstances(): DbInstance[] {
+    return Array.from(this.dbInstances.values());
   }
 
   private send(message: ClientMessage): void {

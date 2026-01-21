@@ -6,6 +6,7 @@ interface Env {
   SPACE_ROOM: DurableObjectNamespace;
   ASSETS?: { fetch: (request: Request) => Promise<Response> };
   DB: D1Database;
+  DB_API_URL?: string;
 }
 
 export default {
@@ -39,6 +40,29 @@ export default {
 
       // Redirect to the new space
       return Response.redirect(`${url.origin}/space/${spaceId}`, 302);
+    }
+
+    // API proxy to db-api for MySQL/MSSQL execution
+    if (path.startsWith('/api/db/')) {
+      const dbApiUrl = env.DB_API_URL || 'https://db-api.ljs.app';
+      const targetUrl = dbApiUrl + path.replace('/api/db', '/db');
+
+      const proxyRequest = new Request(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      });
+
+      const response = await fetch(proxyRequest);
+
+      // Return response (handles both JSON and text formats)
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          'Content-Type': response.headers.get('Content-Type') || 'text/plain',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
     }
 
     // WebSocket upgrade for space collaboration

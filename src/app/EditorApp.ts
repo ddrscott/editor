@@ -1,6 +1,13 @@
 import * as monaco from 'monaco-editor';
 import { marked } from 'marked';
-import { SyncClient } from '../sync/SyncClient';
+import { SyncClient, QueryHistoryItem } from '../sync/SyncClient';
+
+// Extend window to include syncClient for runners
+declare global {
+  interface Window {
+    __syncClient?: SyncClient;
+  }
+}
 import { RunnerManager } from '../runners/RunnerManager';
 import { OutputPane } from '../output/OutputPane';
 
@@ -1268,6 +1275,7 @@ export class EditorApp {
   private runnerManager: RunnerManager;
   private outputPane: OutputPane | null = null;
   private outputSplitContainer: HTMLElement | null = null;
+  private queryHistory: QueryHistoryItem[] = [];
 
   constructor(container: HTMLElement, spaceId?: string) {
     this.container = container;
@@ -1455,9 +1463,14 @@ export class EditorApp {
         }
         // Note: Don't send full sync here - wait for server's sync response
       },
-      onSync: (state) => {
+      onSync: (state, _dbInstances, queryHistory) => {
         // Clear loading state
         this.layoutRoot.innerHTML = '';
+
+        // Store query history from sync
+        if (queryHistory) {
+          this.queryHistory = queryHistory;
+        }
 
         // Full state sync from server - Durable Object is the single source of truth
         // Client NEVER pushes initial state - server creates default state via /new
@@ -1509,7 +1522,18 @@ export class EditorApp {
       onAwarenessChange: (clients) => {
         this.handleAwarenessChange(clients);
       },
+      onQueryResult: (result) => {
+        // Add to query history and update OutputPane if visible
+        this.queryHistory.unshift(result);
+        if (this.queryHistory.length > 50) {
+          this.queryHistory = this.queryHistory.slice(0, 50);
+        }
+        this.outputPane?.addQueryResult(result);
+      },
     });
+
+    // Set global reference for runners to access
+    window.__syncClient = this.syncClient;
   }
 
   private sendFullSync(): void {
@@ -2312,6 +2336,7 @@ export class EditorApp {
     if (this.syncClient) {
       this.syncClient.destroy();
       this.syncClient = null;
+      window.__syncClient = undefined;
     }
 
     // Close output pane if open
@@ -2613,8 +2638,17 @@ export class EditorApp {
 
     // Show reset button for SQL files
     const ext = filename.split('.').pop()?.toLowerCase();
-    const isSqlFile = ext === 'pgsql' || ext === 'psql' || ext === 'duckdb' || ext === 'sql' || ext === 'sqlite';
+    const isSqlFile = ext === 'pgsql' || ext === 'psql' || ext === 'duckdb' || ext === 'sql' || ext === 'sqlite' || ext === 'mysql' || ext === 'mssql';
+    const isRemoteSqlFile = ext === 'mysql' || ext === 'mssql';
     this.outputPane.setShowResetDb(isSqlFile);
+
+    // Enable SQL mode with query history for remote SQL files
+    if (isRemoteSqlFile) {
+      this.outputPane.setSqlMode(ext);
+      this.outputPane.setQueryHistory(this.queryHistory);
+    } else {
+      this.outputPane.setSqlMode(null);
+    }
 
     // Show loading state
     this.outputPane.showLoading('Initializing runtime...');
@@ -2645,17 +2679,23 @@ export class EditorApp {
     const isPostgres = ext === 'pgsql' || ext === 'psql';
     const isDuckDB = ext === 'duckdb';
     const isSQLite = ext === 'sql' || ext === 'sqlite';
+    const isMySql = ext === 'mysql';
+    const isMsSql = ext === 'mssql';
 
-    if (!isPostgres && !isDuckDB && !isSQLite) return;
+    if (!isPostgres && !isDuckDB && !isSQLite && !isMySql && !isMsSql) return;
 
-    const dbName = isPostgres ? 'PostgreSQL' : isDuckDB ? 'DuckDB' : 'SQLite';
+    const dbName = isPostgres ? 'PostgreSQL'
+      : isDuckDB ? 'DuckDB'
+      : isSQLite ? 'SQLite'
+      : isMySql ? 'MySQL'
+      : 'SQL Server';
 
     // Confirm with user
-    const confirmed = confirm(
-      `Are you sure you want to reset the ${dbName} database?\n\n` +
-      'This will delete all tables and data. This action cannot be undone.'
-    );
+    const confirmMessage = isMySql || isMsSql
+      ? `Are you sure you want to reset the ${dbName} connection?\n\nThis will create a new database instance.`
+      : `Are you sure you want to reset the ${dbName} database?\n\nThis will delete all tables and data. This action cannot be undone.`;
 
+    const confirmed = confirm(confirmMessage);
     if (!confirmed) return;
 
     this.outputPane.showLoading('Resetting database...');
@@ -2669,15 +2709,27 @@ export class EditorApp {
         const { DuckDBRunner } = await import('../runners/DuckDBRunner');
         const runner = new DuckDBRunner();
         await runner.resetDatabase();
-      } else {
+      } else if (isSQLite) {
         const { SQLiteRunner } = await import('../runners/SQLiteRunner');
         const runner = new SQLiteRunner();
         await runner.resetDatabase();
+      } else if (isMySql) {
+        const { MySqlRunner } = await import('../runners/MySqlRunner');
+        const runner = new MySqlRunner();
+        await runner.resetDatabase();
+      } else if (isMsSql) {
+        const { MsSqlRunner } = await import('../runners/MsSqlRunner');
+        const runner = new MsSqlRunner();
+        await runner.resetDatabase();
       }
+
+      const successMessage = isMySql || isMsSql
+        ? `${dbName} connection reset successfully.\n\nA new database instance will be created on next run.`
+        : `${dbName} database reset successfully.\n\nAll tables and data have been deleted.`;
 
       this.outputPane.showOutput({
         success: true,
-        output: `${dbName} database reset successfully.\n\nAll tables and data have been deleted.`
+        output: successMessage
       });
     } catch (error) {
       this.outputPane.showOutput({

@@ -103,7 +103,43 @@ interface LayoutUpdateMessage {
   from: string;
 }
 
-type ClientMessage = TabUpdateMessage | TabCreateMessage | TabCloseMessage | TabHideMessage | TabRestoreMessage | TabRenameMessage | FullSyncMessage | AwarenessMessage | LayoutUpdateMessage;
+interface DbStatusMessage {
+  type: 'db-status';
+  dialect: string;
+  instanceId: string;
+  status: string;
+  from: string;
+}
+
+interface QueryResultMessage {
+  type: 'query-result';
+  dialect: string;
+  sql: string;
+  output: string;
+  success: boolean;
+  timestamp: number;
+  executionTime?: number;
+  from: string;
+}
+
+interface DbInstance {
+  dialect: string;
+  instanceId: string;
+  status: string;
+  createdAt: number;
+}
+
+interface QueryHistoryItem {
+  id: number;
+  dialect: string;
+  sql: string;
+  output: string;
+  success: boolean;
+  timestamp: number;
+  executionTime?: number;
+}
+
+type ClientMessage = TabUpdateMessage | TabCreateMessage | TabCloseMessage | TabHideMessage | TabRestoreMessage | TabRenameMessage | FullSyncMessage | AwarenessMessage | LayoutUpdateMessage | DbStatusMessage | QueryResultMessage;
 
 // Generate random color for cursor
 function generateColor(): string {
@@ -161,6 +197,23 @@ export class SpaceRoom {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         layout_json TEXT NOT NULL,
         panes_json TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS db_instances (
+        dialect TEXT PRIMARY KEY,
+        instance_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ready',
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS query_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dialect TEXT NOT NULL,
+        sql TEXT NOT NULL,
+        output TEXT NOT NULL,
+        success INTEGER NOT NULL,
+        timestamp INTEGER NOT NULL,
+        execution_time INTEGER
       );
     `);
 
@@ -346,11 +399,36 @@ export class SpaceRoom {
       }
     });
 
+    // Load db instances
+    const dbInstanceRows = this.sql.exec('SELECT dialect, instance_id, status, created_at FROM db_instances').toArray();
+    const dbInstances: DbInstance[] = dbInstanceRows.map(row => ({
+      dialect: row.dialect as string,
+      instanceId: row.instance_id as string,
+      status: row.status as string,
+      createdAt: row.created_at as number,
+    }));
+
+    // Load recent query history (last 20 per dialect)
+    const queryHistoryRows = this.sql.exec(
+      'SELECT id, dialect, sql, output, success, timestamp, execution_time FROM query_history ORDER BY timestamp DESC LIMIT 50'
+    ).toArray();
+    const queryHistory: QueryHistoryItem[] = queryHistoryRows.map(row => ({
+      id: row.id as number,
+      dialect: row.dialect as string,
+      sql: row.sql as string,
+      output: row.output as string,
+      success: row.success === 1,
+      timestamp: row.timestamp as number,
+      executionTime: row.execution_time as number | undefined,
+    }));
+
     const message = {
       type: 'sync',
       state: this.documentState,
       layout: this.layoutState,
       awareness,
+      dbInstances,
+      queryHistory,
       clientId, // Tell client their ID
     };
 
@@ -475,6 +553,39 @@ export class SpaceRoom {
         // Broadcast to all other clients
         this.broadcast(clientId, message);
         break;
+
+      case 'db-status':
+        // Store db instance status
+        this.sql.exec(
+          `INSERT INTO db_instances (dialect, instance_id, status, created_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(dialect) DO UPDATE SET
+             instance_id = excluded.instance_id,
+             status = excluded.status`,
+          message.dialect,
+          message.instanceId,
+          message.status,
+          Date.now()
+        );
+        // Broadcast to all clients including sender
+        this.broadcastAll(message);
+        break;
+
+      case 'query-result':
+        // Store query result in history
+        this.sql.exec(
+          `INSERT INTO query_history (dialect, sql, output, success, timestamp, execution_time)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          message.dialect,
+          message.sql,
+          message.output,
+          message.success ? 1 : 0,
+          message.timestamp,
+          message.executionTime ?? null
+        );
+        // Broadcast to all clients including sender
+        this.broadcastAll(message);
+        break;
     }
   }
 
@@ -552,6 +663,18 @@ export class SpaceRoom {
         } catch (error) {
           console.error('Failed to send to client:', id, error);
         }
+      }
+    });
+  }
+
+  private broadcastAll(message: unknown): void {
+    const data = JSON.stringify(message);
+
+    this.sessions.forEach((session, id) => {
+      try {
+        session.socket.send(data);
+      } catch (error) {
+        console.error('Failed to send to client:', id, error);
       }
     });
   }

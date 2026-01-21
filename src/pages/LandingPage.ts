@@ -15,6 +15,8 @@ const RUNNABLE_LANGUAGES: LanguageOption[] = [
   { name: 'Ruby', filename: 'app.rb', icon: 'file-code', runnable: true },
   { name: 'Lua', filename: 'script.lua', icon: 'file-code', runnable: true },
   { name: 'PostgreSQL', filename: 'query.pgsql', icon: 'database', runnable: true },
+  { name: 'MySQL', filename: 'query.mysql', icon: 'database', runnable: true },
+  { name: 'SQL Server', filename: 'query.mssql', icon: 'database', runnable: true },
   { name: 'DuckDB', filename: 'query.duckdb', icon: 'database', runnable: true },
   { name: 'SQLite', filename: 'query.sql', icon: 'database', runnable: true },
 ];
