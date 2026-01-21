@@ -145,6 +145,87 @@ class EditorSettings {
   }
 }
 
+// Space history item for tracking visited spaces
+interface SpaceHistoryItem {
+  spaceId: string;
+  title: string;
+  lastVisited: number;
+}
+
+class SpaceHistory {
+  private static readonly STORAGE_KEY = 'monaco-space-history';
+  private static readonly MAX_ITEMS = 20;
+  private history: SpaceHistoryItem[];
+
+  constructor() {
+    this.history = this.load();
+  }
+
+  private load(): SpaceHistoryItem[] {
+    try {
+      const stored = localStorage.getItem(SpaceHistory.STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Failed to load space history:', e);
+    }
+    return [];
+  }
+
+  private save(): void {
+    try {
+      localStorage.setItem(SpaceHistory.STORAGE_KEY, JSON.stringify(this.history));
+    } catch (e) {
+      console.error('Failed to save space history:', e);
+    }
+  }
+
+  visit(spaceId: string, title: string): void {
+    // Remove existing entry for this space if it exists
+    this.history = this.history.filter(item => item.spaceId !== spaceId);
+
+    // Add to the front of the list
+    this.history.unshift({
+      spaceId,
+      title,
+      lastVisited: Date.now(),
+    });
+
+    // Trim to max items
+    if (this.history.length > SpaceHistory.MAX_ITEMS) {
+      this.history = this.history.slice(0, SpaceHistory.MAX_ITEMS);
+    }
+
+    this.save();
+  }
+
+  updateTitle(spaceId: string, title: string): void {
+    const item = this.history.find(i => i.spaceId === spaceId);
+    if (item) {
+      item.title = title;
+      this.save();
+    }
+  }
+
+  getAll(): SpaceHistoryItem[] {
+    return [...this.history];
+  }
+
+  remove(spaceId: string): void {
+    this.history = this.history.filter(item => item.spaceId !== spaceId);
+    this.save();
+  }
+
+  clear(): void {
+    this.history = [];
+    this.save();
+  }
+}
+
+// Singleton instance for space history
+const spaceHistory = new SpaceHistory();
+
 // Register custom actions with Monaco's built-in command system
 function registerEditorActions(settings: EditorSettings): void {
   // Toggle Minimap
@@ -316,7 +397,7 @@ class Pane {
     addButton.className = 'tab-add';
     addButton.innerHTML = '+';
     addButton.title = 'New Tab (Ctrl+N), Right-click to restore';
-    addButton.addEventListener('click', () => this.app.createNewTab(this));
+    addButton.addEventListener('click', () => this.app.createNewTab(this, undefined, '', true));
     addButton.addEventListener('contextmenu', (e) => this.showRestoreMenu(e));
     this.tabsContainer.appendChild(addButton);
 
@@ -1042,7 +1123,7 @@ class Pane {
     setTimeout(() => document.addEventListener('click', closeMenu), 0);
   }
 
-  private renameTab(tabId: string): void {
+  renameTab(tabId: string): void {
     const tab = this.tabs.find(t => t.id === tabId);
     if (!tab) return;
 
@@ -1264,7 +1345,6 @@ export class EditorApp {
   private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
   private static actionsRegistered = false;
   private syncClient: SyncClient | null = null;
-  private connectionStatus: HTMLElement | null = null;
   private isRemoteUpdate = false; // Flag to prevent echo
   private clientColors: Map<string, string> = new Map();
   private colorPalette: string[] = [
@@ -1276,6 +1356,7 @@ export class EditorApp {
   private outputPane: OutputPane | null = null;
   private outputSplitContainer: HTMLElement | null = null;
   private queryHistory: QueryHistoryItem[] = [];
+  private historyDropdown: HTMLElement | null = null;
 
   constructor(container: HTMLElement, spaceId?: string) {
     this.container = container;
@@ -1299,21 +1380,24 @@ export class EditorApp {
     this.layoutRoot.className = 'layout-root';
     this.container.appendChild(this.layoutRoot);
 
-    // Add connection status indicator for collaborative spaces
-    if (this.spaceId) {
-      this.connectionStatus = document.createElement('div');
-      this.connectionStatus.className = 'connection-status connecting';
-      this.connectionStatus.innerHTML = '<span class="connection-dot"></span><span>Connecting...</span>';
-      this.container.appendChild(this.connectionStatus);
-    }
+    // Create logo area with history dropdown
+    const logoArea = document.createElement('div');
+    logoArea.className = 'app-logo-area';
 
-    // Add Run button to top bar
-    const runButton = document.createElement('button');
-    runButton.className = 'run-button';
-    runButton.innerHTML = '&#9654; Run';
-    runButton.title = 'Run Program (Cmd+R)';
-    runButton.addEventListener('click', () => this.runActiveFile());
-    this.container.appendChild(runButton);
+    // Spaces button (history dropdown trigger)
+    const spacesBtn = document.createElement('button');
+    spacesBtn.className = 'spaces-trigger';
+    spacesBtn.textContent = 'Spaces';
+    spacesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleHistoryDropdown();
+    });
+    logoArea.appendChild(spacesBtn);
+
+    // History dropdown container (positioned relative to spaces button)
+    this.historyDropdown = document.createElement('div');
+    this.historyDropdown.className = 'space-history-dropdown';
+    logoArea.appendChild(this.historyDropdown);
 
     const logo = document.createElement('a');
     logo.className = 'app-logo';
@@ -1323,7 +1407,16 @@ export class EditorApp {
       e.preventDefault();
       window.location.href = '/';
     });
-    this.container.appendChild(logo);
+    logoArea.appendChild(logo);
+
+    this.container.appendChild(logoArea);
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (this.historyDropdown && !logoArea.contains(e.target as Node)) {
+        this.historyDropdown.classList.remove('visible');
+      }
+    });
 
     this.init();
     this.setupGlobalShortcuts();
@@ -1340,6 +1433,101 @@ export class EditorApp {
 
   updatePageTitle(tabTitle: string): void {
     document.title = `${tabTitle} | Monaco`;
+    // Update space history with the current tab title
+    if (this.spaceId) {
+      spaceHistory.updateTitle(this.spaceId, tabTitle);
+    }
+  }
+
+  private toggleHistoryDropdown(): void {
+    if (!this.historyDropdown) return;
+
+    const isVisible = this.historyDropdown.classList.contains('visible');
+    if (isVisible) {
+      this.historyDropdown.classList.remove('visible');
+      return;
+    }
+
+    // Render history items
+    const history = spaceHistory.getAll();
+    const copyLinkHtml = this.spaceId ? `<button class="space-history-copy">Copy Link</button>` : '';
+
+    if (history.length === 0) {
+      this.historyDropdown.innerHTML = `
+        <div class="space-history-empty">
+          <p>No recent spaces</p>
+          <p class="space-history-tip">Bookmark this page to save it permanently</p>
+        </div>
+        ${copyLinkHtml ? `<div class="space-history-footer">${copyLinkHtml}</div>` : ''}
+      `;
+    } else {
+      this.historyDropdown.innerHTML = `
+        <div class="space-history-header">Recent Spaces</div>
+        <div class="space-history-list">
+          ${history.map(item => {
+            const isCurrentSpace = item.spaceId === this.spaceId;
+            const date = new Date(item.lastVisited);
+            const timeAgo = this.formatTimeAgo(date);
+            return `
+              <a href="/space/${item.spaceId}" class="space-history-item${isCurrentSpace ? ' current' : ''}" data-space-id="${item.spaceId}">
+                <span class="space-history-title">${this.escapeHtml(item.title)}</span>
+                <span class="space-history-time">${timeAgo}</span>
+              </a>
+            `;
+          }).join('')}
+        </div>
+        <div class="space-history-footer">
+          ${copyLinkHtml}
+          <button class="space-history-clear">Clear History</button>
+        </div>
+        <div class="space-history-tip">Bookmark to save permanently</div>
+      `;
+    }
+
+    // Add copy link handler
+    const copyBtn = this.historyDropdown.querySelector('.space-history-copy');
+    copyBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        const btn = e.target as HTMLButtonElement;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy Link'; }, 1500);
+      });
+    });
+
+    // Add clear handler
+    const clearBtn = this.historyDropdown.querySelector('.space-history-clear');
+    clearBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (confirm('Clear all space history? This cannot be undone.')) {
+        spaceHistory.clear();
+        this.historyDropdown!.classList.remove('visible');
+      }
+    });
+
+    this.historyDropdown.classList.add('visible');
+  }
+
+  private formatTimeAgo(date: Date): string {
+    const now = Date.now();
+    const diff = now - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   private setupGlobalShortcuts(): void {
@@ -1352,7 +1540,7 @@ export class EditorApp {
           case 'n': // New tab
             e.preventDefault();
             if (this.activePane) {
-              this.createNewTab(this.activePane);
+              this.createNewTab(this.activePane, undefined, '', true);
             }
             break;
 
@@ -1374,7 +1562,7 @@ export class EditorApp {
           case 't': // Prevent new browser tab
             e.preventDefault();
             if (this.activePane) {
-              this.createNewTab(this.activePane);
+              this.createNewTab(this.activePane, undefined, '', true);
             }
             break;
 
@@ -1457,9 +1645,8 @@ export class EditorApp {
     this.syncClient = new SyncClient({
       spaceId: this.spaceId,
       onConnectionChange: (connected) => {
-        if (this.connectionStatus) {
-          this.connectionStatus.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
-          this.connectionStatus.innerHTML = `<span class="connection-dot"></span><span>${connected ? 'Connected' : 'Disconnected'}</span>`;
+        if (!connected) {
+          console.error('Connection lost - reconnecting...');
         }
         // Note: Don't send full sync here - wait for server's sync response
       },
@@ -1478,6 +1665,13 @@ export class EditorApp {
           this.isRemoteUpdate = true;
           this.initializeFromServerState(state);
           this.isRemoteUpdate = false;
+
+          // Track this space visit in history
+          if (this.spaceId) {
+            const activeTab = state.tabs.find((t: { id: string }) => t.id === state.activeTabId) || state.tabs[0];
+            const spaceTitle = activeTab?.title || 'Untitled';
+            spaceHistory.visit(this.spaceId, spaceTitle);
+          }
         } else {
           // Server has no state - this shouldn't happen with proper /new flow
           // Show error and suggest creating via /new
@@ -1631,6 +1825,9 @@ export class EditorApp {
     if (activeTab) {
       this.updatePageTitle(activeTab.title);
     }
+
+    // Show output pane by default so users know they can run code
+    this.showOutputPane();
   }
 
   private syncFromRemote(state: { tabs: Array<{ id: string; title: string; content: string }>; activeTabId: string | null; tabCounter: number }): void {
@@ -2052,7 +2249,7 @@ export class EditorApp {
     return tab;
   }
 
-  createNewTab(pane: Pane, title?: string, content: string = ''): Tab {
+  createNewTab(pane: Pane, title?: string, content: string = '', startRename: boolean = false): Tab {
     this.tabCounter++;
     const tabTitle = title || `untitled-${this.tabCounter}.txt`;
     const id = `tab-${Date.now()}-${this.tabCounter}`;
@@ -2078,6 +2275,12 @@ export class EditorApp {
     // Notify sync client about new tab
     if (!this.isRemoteUpdate && this.syncClient) {
       this.syncClient.sendTabCreate(tab.id, tab.title, content);
+    }
+
+    // Auto-focus rename input if requested
+    if (startRename) {
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => pane.renameTab(tab.id), 0);
     }
 
     return tab;

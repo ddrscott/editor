@@ -617,38 +617,26 @@ html, body {
   margin: 0;
 }
 
-/* Connection Status Indicator */
-.connection-status {
-  position: absolute;
-  top: 10px;
-  right: 80px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 11px;
-  color: #808080;
-  z-index: 1000;
-  user-select: none;
-}
-
+/* Connection Status Dot */
 .connection-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background-color: #808080;
   transition: background-color 0.3s;
+  cursor: help;
+  flex-shrink: 0;
 }
 
-.connection-status.connected .connection-dot {
+.connection-dot.connected {
   background-color: #4ade80;
 }
 
-.connection-status.disconnected .connection-dot {
+.connection-dot.disconnected {
   background-color: #f87171;
 }
 
-.connection-status.connecting .connection-dot {
+.connection-dot.connecting {
   background-color: #fbbf24;
   animation: pulse 1.5s infinite;
 }
@@ -1476,4 +1464,183 @@ html, body {
   font-size: 12px;
   text-align: center;
   font-style: italic;
+}
+
+/* App logo area with history dropdown */
+.app-logo-area {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 35px;
+  z-index: 1000;
+}
+
+.app-logo-area .app-logo {
+  position: static;
+  padding: 0 12px;
+  font-size: 12px;
+  color: #6a6a6a;
+}
+
+.app-logo-area .app-logo:hover {
+  color: #909090;
+}
+
+.spaces-trigger {
+  background: none;
+  border: none;
+  border-right: 1px solid #3c3c3c;
+  color: #808080;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  padding: 0 12px;
+  height: 100%;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.spaces-trigger:hover {
+  color: #cccccc;
+  background-color: #2a2d2e;
+}
+
+/* Space history dropdown */
+.space-history-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 280px;
+  max-width: 350px;
+  background-color: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+}
+
+.space-history-dropdown.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.space-history-header {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #808080;
+  border-bottom: 1px solid #3c3c3c;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.space-history-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.space-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  color: #cccccc;
+  text-decoration: none;
+  border-bottom: 1px solid #2d2d2d;
+  transition: background-color 0.1s;
+}
+
+.space-history-item:hover {
+  background-color: #2a2d2e;
+}
+
+.space-history-item.current {
+  background-color: #094771;
+}
+
+.space-history-item.current:hover {
+  background-color: #0a5281;
+}
+
+.space-history-title {
+  font-size: 13px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 12px;
+}
+
+.space-history-time {
+  font-size: 11px;
+  color: #606060;
+  flex-shrink: 0;
+}
+
+.space-history-empty {
+  padding: 20px 16px;
+  color: #808080;
+  font-size: 13px;
+  text-align: center;
+}
+
+.space-history-empty p {
+  margin: 0 0 8px 0;
+}
+
+.space-history-empty p:last-child {
+  margin-bottom: 0;
+}
+
+.space-history-tip {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #606060;
+  text-align: center;
+  border-top: 1px solid #3c3c3c;
+}
+
+.space-history-empty .space-history-tip {
+  border: none;
+  padding: 0;
+  font-size: 12px;
+}
+
+.space-history-footer {
+  padding: 8px 12px;
+  border-top: 1px solid #3c3c3c;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.space-history-copy,
+.space-history-clear {
+  background: none;
+  border: none;
+  color: #808080;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.space-history-copy:hover,
+.space-history-clear:hover {
+  background-color: #3c3c3c;
+  color: #cccccc;
+}
+
+.space-history-copy {
+  color: #4ec9b0;
+}
+
+.space-history-copy:hover {
+  color: #6ad4c2;
 }
